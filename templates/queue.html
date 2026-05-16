@@ -2,178 +2,214 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>{{ restaurant_name }} — QueueQ</title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  background: #1a1a2e;
-  color: #e6edf3;
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 20px;
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  background: #0d1117; color: #e6edf3;
+  min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px;
 }
-.container { max-width: 420px; width: 100%; margin-top: 40px; }
 .card {
-  background: #16213e;
-  border: 1px solid #30363d;
-  border-radius: 20px;
-  padding: 32px 24px;
-  text-align: center;
-  margin-bottom: 16px;
+  background: #161b22; border: 1px solid #30363d; border-radius: 20px;
+  padding: 32px 24px; max-width: 400px; width: 100%; text-align: center;
 }
-.header-icon { font-size: 48px; margin-bottom: 12px; }
 h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
-h2 { font-size: 40px; font-weight: 800; margin: 12px 0; color: #e74c3c; }
 .sub { color: #8b949e; font-size: 14px; margin-bottom: 20px; line-height: 1.5; }
-.waiting { font-size: 14px; color: #8b949e; margin-bottom: 24px; }
-
+.form-group { margin-bottom: 14px; text-align: left; }
+.form-group label { font-size: 13px; color: #8b949e; margin-bottom: 4px; display: block; }
+.form-group input, .form-group select {
+  width: 100%; padding: 14px 16px; border: 1px solid #30363d; border-radius: 12px;
+  font-size: 16px; background: #0d1117; color: #e6edf3; outline: none;
+}
+.form-group input:focus { border-color: #e74c3c; }
 .btn {
-  width: 100%;
-  padding: 16px;
-  border: none;
-  border-radius: 12px;
-  font-size: 16px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: all .15s;
+  width: 100%; padding: 16px; border: none; border-radius: 12px;
+  font-size: 16px; font-weight: 700; cursor: pointer; transition: all .15s;
 }
 .btn:active { transform: scale(0.97); }
 .btn-primary { background: #e74c3c; color: #fff; }
 .btn-primary:hover { background: #c0392b; }
+.btn-secondary { background: #21262d; color: #e6edf3; margin-top: 8px; }
 
-.form-group { margin-bottom: 16px; text-align: left; }
-.form-group label { display: block; font-size: 13px; font-weight: 600; color: #8b949e; margin-bottom: 6px; }
-.form-group input {
-  width: 100%;
-  padding: 14px 16px;
-  border: 1px solid #30363d;
-  border-radius: 12px;
-  font-size: 16px;
-  background: #0d1117;
-  color: #e6edf3;
-  outline: none;
+.review-offer {
+  background: #1a1a2e; border: 1px solid #30363d; border-radius: 12px;
+  padding: 16px; margin: 16px 0; text-align: center;
+  font-size: 15px; line-height: 1.5;
 }
-.form-group input:focus { border-color: #e74c3c; }
-.form-group input::placeholder { color: #484f58; }
+.review-offer strong { color: #d4b48c; }
 
-.notification-note {
-  font-size: 12px;
-  color: #8b949e;
-  margin-top: 12px;
-  line-height: 1.5;
-}
-.notification-note strong { color: #e6edf3; }
+#status-card { display: none; }
+.ticket-big { font-size: 64px; font-weight: 800; color: #e74c3c; margin: 8px 0; }
+.position-text { font-size: 16px; color: #8b949e; margin-bottom: 12px; }
+.pulse { animation: pulse 2s infinite; }
+@keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
 
-#queue-stats {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 20px;
-}
-.stat-box {
-  flex: 1;
-  background: #0d1117;
-  border-radius: 12px;
-  padding: 16px 8px;
-  text-align: center;
-}
-.stat-box .num { font-size: 28px; font-weight: 800; color: #e74c3c; }
-.stat-box .label { font-size: 11px; color: #8b949e; margin-top: 2px; }
+.seated-card { display: none; text-align: center; }
+.seated-card h2 { font-size: 28px; color: #3fb950; margin-bottom: 8px; }
 </style>
 </head>
 <body>
-<div class="container">
-  <div class="card" id="join-card">
-    <div class="header-icon">🍽️</div>
-    <h1>{{ restaurant_name }}</h1>
-    <p class="sub">Join the queue. No app, no phone number.<br>We'll notify you when it's almost your turn.</p>
+<div class="card" id="join-card">
+  <h1>🏪 {{ restaurant_name }}</h1>
+  <p class="sub">Join the queue and get a <strong>free dish</strong> when you leave a Google review!</p>
 
-    <div id="queue-stats">
-      <div class="stat-box">
-        <div class="num" id="waiting-count">-</div>
-        <div class="label">Waiting</div>
-      </div>
-      <div class="stat-box">
-        <div class="num" id="est-wait">-</div>
-        <div class="label">Est. min</div>
-      </div>
+  <form id="join-form">
+    <div class="form-group">
+      <label>Party Size</label>
+      <select id="party-size">
+        <option value="1">1 person</option>
+        <option value="2" selected>2 people</option>
+        <option value="3">3 people</option>
+        <option value="4">4 people</option>
+        <option value="5">5 people</option>
+        <option value="6">6+ people</option>
+      </select>
     </div>
+    <button type="submit" class="btn btn-primary">🎫 Join Queue</button>
+  </form>
 
-    <form id="join-form">
-      <div class="form-group">
-        <label>Party Size</label>
-        <input type="number" id="party-size" value="2" min="1" max="20">
-      </div>
-      <button type="submit" class="btn btn-primary">🎫 Join the Queue</button>
-    </form>
-
-    <p class="notification-note">
-      🔔 <strong>No phone number needed.</strong><br>
-      You'll get a browser notification when you're close to being seated.
-    </p>
-  </div>
-
-  <div id="joined-card" class="card" style="display:none;">
-    <div class="header-icon">✅</div>
-    <h1>You're in line!</h1>
-    <p class="sub" style="margin-bottom:4px;">{{ restaurant_name }}</p>
-    <h2 id="ticket-number">#-</h2>
-    <p class="sub" style="font-size:12px;">Your ticket number</p>
-    <div class="waiting" id="position-text">Checking your position...</div>
-    <a id="status-link" class="btn btn-primary" style="display:block;text-decoration:none;">👀 Check my position</a>
+  <div class="review-offer">
+    🍜 <strong>Get a FREE dish!</strong><br>
+    <span style="font-size:13px;color:#8b949e;">
+      Leave a Google review → show us → enjoy your freebie!
+    </span>
   </div>
 </div>
 
+<div class="card" id="status-card">
+  <div class="pulse">⏳</div>
+  <p class="sub" style="margin-bottom:0;">{{ restaurant_name }}</p>
+  <div class="ticket-big" id="ticket-display">#-</div>
+  <p class="position-text" id="position-display">Checking your position...</p>
+
+  <div class="review-offer" id="review-section">
+    🍜 <strong>Want a free dish?</strong><br>
+    <span style="font-size:13px;color:#8b949e;">
+      Leave a Google review and show us your ticket!
+    </span>
+    <button class="btn btn-secondary" id="review-btn" style="margin-top:12px;">
+      ⭐ Leave Google Review
+    </button>
+    <div id="review-done" style="display:none;margin-top:8px;color:#3fb950;font-weight:600;">
+      ✅ Review link opened! Show your ticket for free dish.
+    </div>
+  </div>
+</div>
+
+<div class="card seated-card" id="seated-card">
+  <h2>✅ Enjoy your meal!</h2>
+  <p class="sub">Hope you had a great time at {{ restaurant_name }}.<br>Don't forget to leave that Google review! ⭐</p>
+</div>
+
 <script>
-const RESTAURANT_ID = '{{ restaurant_id }}';
-const initialStats = {{ stats_json }};
+const RID = '{{ restaurant_id }}';
+const CLIENT_TOKEN = localStorage.getItem('queueq_token') || Math.random().toString(36).slice(2, 10);
+localStorage.setItem('queueq_token', CLIENT_TOKEN);
 
-// Update stats display
-document.getElementById('waiting-count').textContent = initialStats.waiting;
-document.getElementById('est-wait').textContent = Math.ceil(initialStats.waiting * 10);
+let currentEntryId = localStorage.getItem(`queueq_entry_${RID}`);
+let pollTimer = null;
 
-// Live stats via SSE
-const evtSource = new EventSource(`/api/queue/${RESTAURANT_ID}/events`);
-evtSource.onmessage = (e) => {
-  const data = JSON.parse(e.data);
-  if (data.type === 'update') {
-    fetch(`/api/queue/${RESTAURANT_ID}/status`)
-      .then(r => r.json())
-      .then(s => {
-        document.getElementById('waiting-count').textContent = s.stats.waiting;
-        document.getElementById('est-wait').textContent = Math.ceil(s.stats.waiting * 10);
-      });
-  }
-};
+// Auto-restore if already joined
+if (currentEntryId) {
+  fetch(`/api/queue/entry/${currentEntryId}`)
+    .then(r => r.json())
+    .then(data => {
+      if (data.status === 'waiting' || data.status === 'called') {
+        showStatus(data.ticket_number, data.entry_id);
+      } else {
+        localStorage.removeItem(`queueq_entry_${RID}`);
+      }
+    })
+    .catch(() => localStorage.removeItem(`queueq_entry_${RID}`));
+}
 
-// Join queue
 document.getElementById('join-form').addEventListener('submit', async (e) => {
   e.preventDefault();
-  const partySize = parseInt(document.getElementById('party-size').value) || 1;
+  const size = parseInt(document.getElementById('party-size').value) || 2;
+  const fd = new FormData();
+  fd.append('restaurant_id', RID);
+  fd.append('party_size', size);
+  fd.append('client_token', CLIENT_TOKEN);
 
-  // Request notification permission and get push subscription
-  let pushSub = '';
-  if ('Notification' in window && Notification.permission === 'default') {
-    Notification.requestPermission();
-  }
-
-  const formData = new FormData();
-  formData.append('restaurant_id', RESTAURANT_ID);
-  formData.append('party_size', partySize);
-  formData.append('push_subscription', pushSub);
-
-  const res = await fetch('/api/queue/join', { method: 'POST', body: formData });
+  const res = await fetch('/api/queue/join', { method: 'POST', body: fd });
   const data = await res.json();
 
-  document.getElementById('join-card').style.display = 'none';
-  document.getElementById('joined-card').style.display = 'block';
-  document.getElementById('ticket-number').textContent = `#${data.ticket_number}`;
-  document.getElementById('status-link').href = `/status/${data.entry_id}`;
-  document.getElementById('position-text').textContent = 'Your queue position is being tracked. Tap below for live updates.';
+  if (data.error === 'already_in_queue') {
+    fetch(`/api/queue/entry/${data.entry_id}`)
+      .then(r => r.json())
+      .then(e => showStatus(e.ticket_number, e.entry_id));
+    return;
+  }
+
+  localStorage.setItem(`queueq_entry_${RID}`, data.entry_id);
+  showStatus(data.ticket_number, data.entry_id);
 });
+
+function showStatus(ticket, entryId) {
+  document.getElementById('join-card').style.display = 'none';
+  document.getElementById('status-card').style.display = 'block';
+  document.getElementById('ticket-display').textContent = `#${ticket}`;
+  currentEntryId = entryId;
+  updatePosition();
+
+  document.getElementById('review-btn').addEventListener('click', async () => {
+    // Mark review as opened
+    const fd = new FormData();
+    fd.append('entry_id', entryId);
+    await fetch('/api/queue/review-opened', { method: 'POST', body: fd });
+
+    // Open Google Maps review
+    const reviewUrl = `https://search.google.com/local/writereview?placeid=${RID}`;
+    window.open(reviewUrl, '_blank');
+
+    document.getElementById('review-done').style.display = 'block';
+    document.getElementById('review-btn').style.display = 'none';
+  });
+
+  pollTimer = setInterval(updatePosition, 10000);
+}
+
+async function updatePosition() {
+  if (!currentEntryId) return;
+  try {
+    const res = await fetch(`/api/queue/entry/${currentEntryId}`);
+    const data = await res.json();
+
+    if (data.status === 'seated') {
+      document.getElementById('status-card').style.display = 'none';
+      document.getElementById('seated-card').style.display = 'block';
+      localStorage.removeItem(`queueq_entry_${RID}`);
+      if (pollTimer) clearInterval(pollTimer);
+      return;
+    }
+
+    if (data.status === 'called') {
+      document.getElementById('position-display').textContent =
+        '🔔 Table is ready! Please go to the counter.';
+      document.getElementById('position-display').style.color = '#3fb950';
+      return;
+    }
+
+    // Still waiting
+    const posRes = await fetch(`/api/queue/${RID}/status`);
+    const queue = await posRes.json();
+    const myTicket = data.ticket_number;
+    const ahead = (queue.waiting || []).filter(e => e.ticket_number < myTicket).length;
+    const total = (queue.stats.waiting || 0);
+
+    if (ahead <= 0 && total > 0) {
+      document.getElementById('position-display').textContent =
+        '🔔 You\'re NEXT! Almost ready!';
+      document.getElementById('position-display').style.color = '#f0883e';
+    } else {
+      document.getElementById('position-display').textContent =
+        `${ahead} party(ies) ahead of you · ${total} total waiting`;
+      document.getElementById('position-display').style.color = '#8b949e';
+    }
+  } catch (e) {}
+}
 </script>
 </body>
 </html>
