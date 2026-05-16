@@ -314,9 +314,14 @@ async def generate_poster(restaurant_id: str, photo: UploadFile = File(...)):
     poster = store_img.convert("RGBA")
     draw = ImageDraw.Draw(poster)
 
-    # Vignette
-    for i in range(250, 0, -1):
-        draw.ellipse([-i, -i, 600 + i, 600 + i], fill=(0, 0, 0, max(0, int(50 * (1 - i / 250)))))
+    # Subtle vignette — single radial gradient overlay
+    vignette = Image.new("RGBA", (600, 600), (0, 0, 0, 0))
+    vdraw = ImageDraw.Draw(vignette)
+    cx, cy = 300, 300
+    for r in range(300, 0, -5):
+        alpha = int(35 * (1 - r / 300))
+        vdraw.ellipse([cx-r, cy-r, cx+r, cy+r], fill=(0, 0, 0, alpha))
+    poster = Image.alpha_composite(poster, vignette)
 
     # QR at bottom-right
     qx, qy = 600 - 120 - 14, 600 - 120 - 14
