@@ -152,7 +152,8 @@ async def create_restaurant(name: str = Form(...), passcode: str = Form(...)):
                  (rid, name, passcode, now))
     conn.commit()
     conn.close()
-    queue_url = f"/queue/{rid}"
+    base_url = os.getenv("QUEUEQ_URL", f"http://localhost:{os.getenv('PORT', '8000')}")
+    queue_url = f"{base_url}/queue/{rid}"
     qr_svg = qrcode.make(queue_url, image_factory=qrcode.image.svg.SvgPathImage).to_string().decode()
     return JSONResponse({"restaurant_id": rid, "queue_url": queue_url, "qr_svg": qr_svg})
 
