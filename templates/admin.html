@@ -71,6 +71,25 @@ h1 { font-size: 20px; margin-bottom: 2px; }
 <div id="queue-list"><div class="empty">No one waiting</div></div>
 <div class="three-dots">••• queue refreshes automatically •••</div>
 
+<!-- Poster Generator - leave a comment below if you want to keep this section -->
+<hr style="border-color:#30363d;margin:20px 0;">
+<h2>📸 Generate Print Poster</h2>
+<p class="sub">Upload your store photo → add QR + "Review to get free menu" text → download to print</p>
+
+<div class="photo-area" id="photoArea" style="width:100%;height:200px;background:#161b22;border:2px dashed #30363d;border-radius:12px;display:flex;align-items:center;justify-content:center;cursor:pointer;margin-bottom:12px;overflow:hidden;">
+  <input type="file" accept="image/*" id="photoInput" style="display:none;">
+  <span id="photoPlaceholder" style="color:#8b949e;font-size:14px;">📷 Tap to upload store photo</span>
+  <img id="photoPreview" style="display:none;width:100%;height:100%;object-fit:cover;">
+</div>
+
+<div id="poster-preview" style="display:none;margin-bottom:12px;">
+  <p class="sub">Preview:</p>
+  <img id="poster-img" style="width:100%;border-radius:12px;border:1px solid #30363d;">
+</div>
+
+<button class="btn btn-primary" id="gen-poster-btn" style="display:none;">🎨 Generate Poster</button>
+<button class="btn btn-primary" id="dl-poster-btn" style="display:none;background:#238636;">📥 Download Poster PNG</button>
+
 <div id="confirm-modal">
   <div class="modal-card" id="call-result">
     <h2 id="call-ticket">#-</h2>
@@ -178,6 +197,63 @@ function skipCall() {
 // Initial + poll every 10s
 poll();
 pollTimer = setInterval(poll, 10000);
+
+// === Poster Generator ===
+let posterBlob = null;
+
+const photoInput = document.getElementById('photoInput');
+const photoArea = document.getElementById('photoArea');
+const photoPreview = document.getElementById('photoPreview');
+const photoPlaceholder = document.getElementById('photoPlaceholder');
+const genBtn = document.getElementById('gen-poster-btn');
+const dlBtn = document.getElementById('dl-poster-btn');
+const posterPreview = document.getElementById('poster-preview');
+const posterImg = document.getElementById('poster-img');
+
+photoArea.addEventListener('click', () => photoInput.click());
+
+photoInput.addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    photoPreview.src = ev.target.result;
+    photoPreview.style.display = 'block';
+    photoPlaceholder.style.display = 'none';
+    genBtn.style.display = 'block';
+    posterBlob = file;
+  };
+  reader.readAsDataURL(file);
+});
+
+genBtn.addEventListener('click', async () => {
+  if (!posterBlob) return;
+  genBtn.disabled = true;
+  genBtn.textContent = '⏳ Generating...';
+
+  const fd = new FormData();
+  fd.append('photo', posterBlob);
+
+  const res = await fetch('/api/poster/' + RID, { method: 'POST', body: fd });
+  if (!res.ok) { genBtn.textContent = '❌ Error'; return; }
+
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  posterImg.src = url;
+  posterPreview.style.display = 'block';
+  dlBtn.style.display = 'block';
+  dlBtn.onclick = () => {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'queueq-poster-' + RID + '.png';
+    a.click();
+  };
+
+  genBtn.textContent = '✅ Done!';
+  genBtn.disabled = false;
+  setTimeout(() => { genBtn.textContent = '🎨 Generate Poster'; }, 3000);
+});
 </script>
 </body>
 </html>

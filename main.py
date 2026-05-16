@@ -11,11 +11,14 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Form
-from fastapi.responses import HTMLResponse, JSONResponse
+import io
+import httpx
+from fastapi import FastAPI, HTTPException, Form, File, UploadFile
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 import qrcode
 import qrcode.image.svg
+from PIL import Image, ImageDraw, ImageFont
 import uvicorn
 
 logging.basicConfig(level=logging.INFO)
@@ -279,6 +282,73 @@ async def get_entry(entry_id: str):
         "review_opened": entry["review_opened"],
         "review_confirmed": entry["review_confirmed"],
     })
+
+
+@app.post("/api/poster/{restaurant_id}")
+async def generate_poster(restaurant_id: str, photo: UploadFile = File(...)):
+    """Generate poster: store photo + QR + 'Review to get free menu' text."""
+    conn = get_db()
+    rest = conn.execute("SELECT * FROM restaurants WHERE id = ?", (restaurant_id,)).fetchone()
+    conn.close()
+    if not rest:
+        raise HTTPException(404)
+
+    base_url = os.getenv("QUEUEQ_URL", f"http://localhost:{os.getenv('PORT', '8000')}")
+    queue_url = f"{base_url}/queue/{restaurant_id}"
+
+    photo_bytes = await photo.read()
+    store_img = Image.open(io.BytesIO(photo_bytes))
+
+    # Square crop + resize to 600x600
+    s = min(store_img.width, store_img.height, 600)
+    cx, cy = store_img.width // 2, store_img.height // 2
+    store_img = store_img.crop((cx - s//2, cy - s//2, cx + s//2, cy + s//2)).resize((600, 600), Image.LANCZOS)
+
+    # Generate QR
+    qr = qrcode.QRCode(border=1, box_size=6)
+    qr.add_data(queue_url)
+    qr.make(fit=True)
+    qr_pil = qr.make_image(fill_color="black", back_color="white").convert("RGBA").resize((120, 120), Image.LANCZOS)
+
+    # Composite
+    poster = store_img.convert("RGBA")
+    draw = ImageDraw.Draw(poster)
+
+    # Vignette
+    for i in range(250, 0, -1):
+        draw.ellipse([-i, -i, 600 + i, 600 + i], fill=(0, 0, 0, max(0, int(50 * (1 - i / 250)))))
+
+    # QR at bottom-right
+    qx, qy = 600 - 120 - 14, 600 - 120 - 14
+    poster.paste(qr_pil, (qx, qy), qr_pil)
+
+    # Text "Review to get free menu!"
+    text = "✨ Review to get free menu!"
+    sub = "Scan QR to join the queue"
+
+    try:
+        font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 22)
+    except:
+        font = ImageFont.load_default()
+
+    # Main text
+    tb = draw.textbbox((0, 0), text, font=font)
+    tx = (600 - (tb[2] - tb[0])) / 2
+    ty = qy - 40
+    draw.text((tx+1, ty+1), text, fill=(0,0,0,180), font=font)
+    draw.text((tx, ty), text, fill=(255,255,255,230), font=font)
+
+    # Sub text
+    sb = draw.textbbox((0, 0), sub, font=font)
+    sx = (600 - (sb[2] - sb[0])) / 2
+    sy = ty + 30
+    draw.text((sx+1, sy+1), sub, fill=(0,0,0,150), font=font)
+    draw.text((sx, sy), sub, fill=(255,255,255,160), font=font)
+
+    buf = io.BytesIO()
+    poster.convert("RGB").save(buf, "PNG")
+    buf.seek(0)
+    return Response(content=buf.getvalue(), media_type="image/png")
 
 
 if __name__ == "__main__":
