@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QueueQ — Restaurant Queue Manager</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: #f5f0e8;
+  color: #1a1a1a;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.container { max-width: 420px; width: 100%; }
+.card {
+  background: #fff;
+  border-radius: 20px;
+  padding: 32px 24px;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+  margin-bottom: 16px;
+  text-align: center;
+}
+h1 { font-size: 28px; font-weight: 800; margin-bottom: 4px; }
+.sub { color: #888; font-size: 14px; margin-bottom: 24px; line-height: 1.5; }
+.form-group { margin-bottom: 16px; text-align: left; }
+.form-group label { display: block; font-size: 13px; font-weight: 600; color: #666; margin-bottom: 6px; }
+.form-group input {
+  width: 100%;
+  padding: 14px 16px;
+  border: 2px solid #eee;
+  border-radius: 12px;
+  font-size: 16px;
+  outline: none;
+  transition: border .2s;
+}
+.form-group input:focus { border-color: #e74c3c; }
+.btn {
+  width: 100%;
+  padding: 16px;
+  border: none;
+  border-radius: 12px;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all .15s;
+}
+.btn:active { transform: scale(0.97); }
+.btn-primary { background: #e74c3c; color: #fff; }
+.btn-primary:hover { background: #c0392b; }
+.btn-secondary { background: #f5f0e8; color: #333; }
+.btn-secondary:hover { background: #e8e0d0; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="card">
+    <h1>🏪 QueueQ</h1>
+    <p class="sub">Wait smarter, not longer.<br>Create a QR queue for your restaurant.</p>
+
+    <form id="create-form">
+      <div class="form-group">
+        <label>Restaurant Name</label>
+        <input type="text" id="rest-name" placeholder="e.g. Seoul BBQ House" required>
+      </div>
+      <div class="form-group">
+        <label>Admin Passcode (4 digits)</label>
+        <input type="password" id="passcode" placeholder="e.g. 1234" maxlength="4" pattern="[0-9]{4}" required>
+      </div>
+      <button type="submit" class="btn btn-primary">✨ Generate QR Queue</button>
+    </form>
+  </div>
+
+  <div id="result" style="display:none;">
+    <div class="card">
+      <h2>✅ Ready!</h2>
+      <p class="sub" id="rest-name-display"></p>
+
+      <div class="qr-display" id="qr-display"></div>
+
+      <div style="margin-top:16px;text-align:left;font-size:14px;color:#666;line-height:1.8;">
+        <strong>📋 Next steps:</strong><br>
+        1. 📥 Download or save this QR code<br>
+        2. 🖨️ Print it and put it at the entrance<br>
+        3. 📊 Open the admin dashboard to manage the queue<br>
+      </div>
+
+      <div style="margin-top:16px;">
+        <a id="admin-link" class="btn btn-primary" style="display:block;text-decoration:none;" target="_blank">🔐 Open Admin Dashboard</a>
+        <button class="btn btn-secondary" onclick="downloadQR()" style="margin-top:8px;">📥 Download QR</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+document.getElementById('create-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const name = document.getElementById('rest-name').value.trim();
+  const passcode = document.getElementById('passcode').value.trim();
+
+  const formData = new FormData();
+  formData.append('name', name);
+  formData.append('passcode', passcode);
+
+  const res = await fetch('/api/restaurant/create', { method: 'POST', body: formData });
+  const data = await res.json();
+
+  document.getElementById('create-form').style.display = 'none';
+  document.getElementById('result').style.display = 'block';
+  document.getElementById('rest-name-display').textContent = `${name} · Passcode: ${passcode}`;
+  document.getElementById('qr-display').innerHTML = data.qr_svg;
+  document.getElementById('admin-link').href = `/admin/${data.restaurant_id}?passcode=${passcode}`;
+
+  // Store admin link for download
+  window._adminUrl = `/admin/${data.restaurant_id}?passcode=${passcode}`;
+  window._restaurantId = data.restaurant_id;
+});
+
+function downloadQR() {
+  const svg = document.getElementById('qr-display').innerHTML;
+  const blob = new Blob([svg], { type: 'image/svg+xml' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `queueq-${window._restaurantId || 'qr'}.svg`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+</script>
+</body>
+</html>
