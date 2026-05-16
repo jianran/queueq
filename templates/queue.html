@@ -93,7 +93,7 @@ h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
       ⭐ Leave Google Review
     </button>
     <div id="review-done" style="display:none;margin-top:8px;color:#3fb950;font-weight:600;">
-      ✅ Review link opened! Show your ticket for free dish.
+      ✅ Thanks! Show this to the staff for your free dish.
     </div>
   </div>
 </div>
@@ -161,7 +161,8 @@ function showStatus(ticket, entryId) {
     await fetch('/api/queue/review-opened', { method: 'POST', body: fd });
 
     // Open Google Maps review
-    const reviewUrl = `https://search.google.com/local/writereview?placeid=${RID}`;
+    const reviewName = encodeURIComponent('{{ restaurant_name }}');
+    const reviewUrl = `https://www.google.com/maps/search/${reviewName}/?hl=en`;
     window.open(reviewUrl, '_blank');
 
     document.getElementById('review-done').style.display = 'block';
