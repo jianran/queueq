@@ -322,6 +322,7 @@ async def generate_poster(restaurant_id: str, photo: UploadFile = File(...)):
         alpha = int(35 * (1 - r / 300))
         vdraw.ellipse([cx-r, cy-r, cx+r, cy+r], fill=(0, 0, 0, alpha))
     poster = Image.alpha_composite(poster, vignette)
+    draw = ImageDraw.Draw(poster)
 
     # QR at bottom-right
     qx, qy = 600 - 120 - 14, 600 - 120 - 14
