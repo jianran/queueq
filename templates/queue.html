@@ -149,7 +149,7 @@ h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
     <div class="install-icon">📲</div>
     <div class="install-text">
       <strong>Get notified when your table is ready!</strong>
-      <span id="install-steps">Add this page to your Home Screen for quick access!</span>
+      <span id="install-steps">Add this page to your Home Screen. Notifications work even when your phone is locked.</span>
     </div>
     <button class="install-btn" id="install-btn" onclick="showBookmarkModal()">
       Show Me How
@@ -266,7 +266,7 @@ h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
   <div class="modal-card">
     <div class="modal-icon" id="install-modal-icon">📲</div>
     <h2 id="install-modal-title">Get Notified When Your Table is Ready</h2>
-    <p id="install-modal-desc">Add this page to your Home Screen for quick access to your queue status!</p>
+    <p id="install-modal-desc">Add this page to your Home Screen and we can send you a notification — even when your phone is locked!</p>
     
     <div id="install-steps-ios" style="display:none;background:#1a1a2e;border-radius:10px;padding:14px;margin-bottom:16px;text-align:left;font-size:14px;line-height:1.8;">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
@@ -281,7 +281,7 @@ h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
         <span style="background:#238636;color:#fff;border-radius:50%;width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0;">3</span>
         <span>Tap <strong>"Add"</strong> in the top right corner ✅</span>
       </div>
-      <p style="margin-top:10px;color:#3fb950;font-size:13px;text-align:center;">🎉 Done! You'll find this page on your Home Screen!</p>
+      <p style="margin-top:10px;color:#3fb950;font-size:13px;text-align:center;">🎉 Done! Now you'll get push notifications!</p>
     </div>
 
     <div id="install-steps-android" style="display:none;background:#1a1a2e;border-radius:10px;padding:14px;margin-bottom:16px;text-align:left;font-size:14px;line-height:1.8;">
@@ -297,7 +297,7 @@ h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
         <span style="background:#238636;color:#fff;border-radius:50%;width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0;">3</span>
         <span>Tap <strong>"Add"</strong> ✅</span>
       </div>
-      <p style="margin-top:10px;color:#3fb950;font-size:13px;text-align:center;">🎉 Done! You'll find this page on your Home Screen!</p>
+      <p style="margin-top:10px;color:#3fb950;font-size:13px;text-align:center;">🎉 Done! You'll get notifications now!</p>
     </div>
 
     <div class="modal-actions">
@@ -457,6 +457,64 @@ async function confirmLeave() {
 
 document.getElementById('leave-btn').addEventListener('click', showLeaveModal);
 
+// ── Push Notification Setup ────────────────────────────────────────────
+
+async function subscribePush(entryId) {
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+  const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+
+  if (!('Notification' in window && 'serviceWorker' in navigator && 'PushManager' in window)) {
+    showToast('Push not supported on this browser', true);
+    return;
+  }
+  if (Notification.permission === 'denied') return;
+
+  try {
+    const permission = await Notification.requestPermission();
+    if (permission !== 'granted') {
+      if (isIOS) showToast('📱 Allow notifications to get queue updates', true);
+      return;
+    }
+
+    const reg = await navigator.serviceWorker.ready;
+    const keyRes = await fetch('/api/vapid-public-key');
+    const keyData = await keyRes.json();
+    const keyBytes = Uint8Array.from(
+      atob(keyData.public_key.replace(/_/g, '/').replace(/-/g, '+')),
+      c => c.charCodeAt(0)
+    );
+    console.log('Push: requesting subscribe, key length:', keyBytes.length);
+    const sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: keyBytes,
+    });
+    console.log('Push: subscribed, endpoint:', sub.endpoint?.substring(0, 60));
+    const fd = new FormData();
+    fd.append('entry_id', entryId);
+    fd.append('subscription', JSON.stringify(sub.toJSON()));
+    const subRes = await fetch('/api/push/subscribe', { method: 'POST', body: fd });
+    if (subRes.ok) {
+      console.log('✅ Push subscribed for entry', entryId);
+    } else {
+      console.warn('Push subscribe API failed:', subRes.status, await subRes.text());
+    }
+  } catch (e) {
+    console.error('Push subscribe failed:', e);
+    if (isIOS) {
+      showToast('📱 Add to Home Screen first, then allow notifications', true);
+    }
+  }
+}
+
+// Register service worker with root scope for push notifications
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/static/sw.js', { scope: '/' })
+      .then(reg => { console.log('SW registered, scope:', reg.scope); })
+      .catch(e => console.error('SW reg failed:', e));
+  });
+}
+
 // ── Auto-restore if already joined ─────────────────────────────────────
 
 if (currentEntryId) {
@@ -465,6 +523,7 @@ if (currentEntryId) {
     .then(data => {
       if (data.status === 'waiting' || data.status === 'called') {
         showStatus(data.ticket_number, data.entry_id);
+        subscribePush(data.entry_id);  // subscribe to push on restore
       } else {
         localStorage.removeItem(`queueq_entry_${RID}`);
       }
@@ -482,9 +541,9 @@ if (isMobile && !isStandalone) {
   const steps = document.getElementById('install-steps');
   banner.style.display = 'flex';
   if (isIOS) {
-    steps.textContent = 'Tap the Share button, then "Add to Home Screen".';
+    steps.textContent = 'Tap the Share button, then "Add to Home Screen". Notifications work even when your phone is locked.';
   } else {
-    steps.textContent = 'Tap the menu ⋮ → "Add to Home Screen".';
+    steps.textContent = 'Tap the menu ⋮ → "Add to Home Screen". Notifications work even when your phone is locked.';
   }
 }
 
@@ -514,6 +573,7 @@ document.getElementById('join-form').addEventListener('submit', async (e) => {
 
   localStorage.setItem(`queueq_entry_${RID}`, data.entry_id);
   showStatus(data.ticket_number, data.entry_id);
+  await subscribePush(data.entry_id);
 });
 
 // ── Status display (after joining) ─────────────────────────────────────

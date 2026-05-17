@@ -5,6 +5,7 @@ leaves a Google review, gets a free dish. That's it.
 
 import os
 import uuid
+import json
 import sqlite3
 import logging
 import socket
@@ -19,6 +20,12 @@ import qrcode
 import qrcode.image.svg
 from PIL import Image, ImageDraw, ImageFont
 import uvicorn
+
+try:
+    from pywebpush import webpush, WebPushException
+except ImportError:
+    webpush = None
+    WebPushException = Exception
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("queueq")
@@ -59,6 +66,119 @@ TEMPLATES_DIR.mkdir(exist_ok=True)
 
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
+# ── VAPID Keys ──────────────────────────────────────────────────────────
+VAPID_FILE = DATA_DIR / "vapid.json"
+VAPID_CLAIMS = None
+
+
+def _ensure_vapid():
+    """Load or generate VAPID keys on first run."""
+    global VAPID_CLAIMS
+    if VAPID_CLAIMS is not None:
+        return VAPID_CLAIMS
+    if VAPID_FILE.exists():
+        with open(VAPID_FILE) as f:
+            data = json.load(f)
+        # Migrate old format (PEM private key + X962 public key) to new format
+        if "-----BEGIN" in data.get("private_key", ""):
+            logger.info("Migrating old VAPID key format")
+            from cryptography.hazmat.primitives import serialization
+            from base64 import urlsafe_b64encode
+            from py_vapid import Vapid
+            priv_pem = data["private_key"]
+            priv_key = serialization.load_pem_private_key(
+                priv_pem.encode(), password=None
+            )
+            priv_der = priv_key.private_bytes(
+                encoding=serialization.Encoding.DER,
+                format=serialization.PrivateFormat.PKCS8,
+                encryption_algorithm=serialization.NoEncryption()
+            )
+            priv_der_b64 = urlsafe_b64encode(priv_der).rstrip(b"=").decode()
+            spki_bytes = priv_key.public_key().public_bytes(
+                encoding=serialization.Encoding.DER,
+                format=serialization.PublicFormat.SubjectPublicKeyInfo
+            )
+            spki_b64 = urlsafe_b64encode(spki_bytes).rstrip(b"=").decode()
+            data = {
+                "public_key": spki_b64,
+                "private_key": priv_der_b64,
+            }
+            VAPID_FILE.write_text(json.dumps(data, indent=2))
+    else:
+        if webpush is None:
+            logger.warning("pywebpush not installed; push notifications disabled")
+            VAPID_CLAIMS = None
+            return None
+        from cryptography.hazmat.primitives import serialization
+        from base64 import urlsafe_b64encode
+        from py_vapid import Vapid
+        v = Vapid()
+        v.generate_keys()
+        # pywebpush needs DER-encoded private key (base64url for from_string)
+        priv_der = v.private_key.private_bytes(
+            encoding=serialization.Encoding.DER,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.NoEncryption()
+        )
+        priv_der_b64 = urlsafe_b64encode(priv_der).rstrip(b"=").decode()
+        # Safari/iOS needs SPKI-encoded public key (with algorithm ID)
+        spki_bytes = v.public_key.public_bytes(
+            encoding=serialization.Encoding.DER,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo
+        )
+        spki_b64 = urlsafe_b64encode(spki_bytes).rstrip(b"=").decode()
+        data = {
+            "public_key": spki_b64,
+            "private_key": priv_der_b64,
+        }
+        VAPID_FILE.write_text(json.dumps(data, indent=2))
+        logger.info("Generated new VAPID keys → %s", VAPID_FILE)
+
+    base_url = _get_base_url()
+    VAPID_CLAIMS = {
+        "vapid_public_key": data["public_key"],
+        "vapid_private_key": data["private_key"],
+        "subscriber": f"mailto:{base_url}",
+    }
+    return VAPID_CLAIMS
+
+
+def send_push(subscription_json: str, title: str, body: str, url: str):
+    """Send a Web Push notification. Returns True on success."""
+    if webpush is None:
+        logger.warning("pywebpush not available, skipping push")
+        return False
+    info = _ensure_vapid()
+    if not info:
+        return False
+    try:
+        sub = json.loads(subscription_json)
+        payload = json.dumps({"title": title, "body": body, "url": url})
+        logger.info("Sending push to endpoint: %s", sub.get("endpoint", "unknown")[:60])
+        response = webpush(
+            subscription_info=sub,
+            data=payload,
+            vapid_private_key=info["vapid_private_key"],
+            vapid_claims={"sub": info["subscriber"]},
+        )
+        logger.info("Push sent successfully, status: %d", response.status_code)
+        return True
+    except WebPushException as e:
+        # 410 Gone = subscription expired, clean up
+        if getattr(e, "response", None) and e.response.status_code in (410, 404):
+            logger.info("Push subscription expired (410/404), cleaning up")
+            return "expired"
+        # Other errors
+        err_detail = str(e)
+        if getattr(e, "response", None):
+            err_detail += f" (status={e.response.status_code})"
+        logger.warning("push send failed: %s", err_detail)
+        return False
+    except Exception as e:
+        logger.warning("push send error: %s", e)
+        return False
+
 
 def get_db():
     conn = sqlite3.connect(str(DATA_DIR / "queueq.db"))
@@ -88,6 +208,7 @@ def init_db():
             review_confirmed INTEGER DEFAULT 0,
             called_at TEXT,
             seated_at TEXT,
+            push_subscription TEXT DEFAULT NULL,
             FOREIGN KEY (restaurant_id) REFERENCES restaurants(id)
         );
         CREATE INDEX IF NOT EXISTS idx_queue_rid ON queue_entries(restaurant_id, status);
@@ -97,6 +218,7 @@ def init_db():
 
 
 init_db()
+_ensure_vapid()  # warm up VAPID keys
 
 
 def render(template: str, **kwargs) -> str:
@@ -292,6 +414,26 @@ async def call_next(restaurant_id: str = Form(...), passcode: str = Form(""), pa
     conn.execute("UPDATE queue_entries SET status = 'called', called_at = ? WHERE id = ?",
                  (now, entry["id"]))
     conn.commit()
+
+    # ── Send push notification if the customer subscribed ────────────────
+    sub_json = entry["push_subscription"]
+    if sub_json:
+        base_url = _get_base_url()
+        status_url = f"{base_url}/status/{entry['id']}"
+        rest_name = rest["name"]
+        logger.info("Sending push to entry %s, ticket #%d", entry["id"], entry["ticket_number"])
+        result = send_push(
+            sub_json,
+            title="🪑 Table Ready!",
+            body=f"Your table at {rest_name} is ready! Party of {entry['party_size']}. Please return.",
+            url=status_url,
+        )
+        if result == "expired":
+            conn.execute("UPDATE queue_entries SET push_subscription = NULL WHERE id = ?",
+                         (entry["id"],))
+            conn.commit()
+            logger.info("Cleaned up expired push sub for entry %s", entry["id"])
+
     conn.close()
     return JSONResponse({
         "entry_id": entry["id"],
@@ -315,6 +457,45 @@ async def seat_customer(entry_id: str = Form(...), restaurant_id: str = Form(...
     conn.commit()
     conn.close()
     return JSONResponse({"status": "seated"})
+
+
+@app.post("/api/push/subscribe")
+async def subscribe_push(entry_id: str = Form(...), subscription: str = Form(...)):
+    """Store a Web Push subscription associated with a queue entry."""
+    conn = get_db()
+    entry = conn.execute("SELECT * FROM queue_entries WHERE id = ?", (entry_id,)).fetchone()
+    if not entry:
+        conn.close()
+        raise HTTPException(404, "Entry not found")
+    conn.execute("UPDATE queue_entries SET push_subscription = ? WHERE id = ?",
+                 (subscription, entry_id))
+    conn.commit()
+    conn.close()
+    # Log first 50 chars of endpoint for debugging
+    try:
+        ep = json.loads(subscription).get("endpoint", "?")[:60]
+    except:
+        ep = "?"
+    logger.info("Push subscription stored for entry %s → %s", entry_id[:20], ep)
+    return JSONResponse({"status": "ok"})
+
+
+@app.post("/api/push/unsubscribe")
+async def unsubscribe_push(entry_id: str = Form(...)):
+    """Remove push subscription from an entry."""
+    conn = get_db()
+    conn.execute("UPDATE queue_entries SET push_subscription = NULL WHERE id = ?", (entry_id,))
+    conn.commit()
+    conn.close()
+    return JSONResponse({"status": "ok"})
+
+
+@app.get("/api/vapid-public-key")
+async def get_vapid_public_key():
+    info = _ensure_vapid()
+    if not info:
+        raise HTTPException(500, "VAPID not configured")
+    return JSONResponse({"public_key": info["vapid_public_key"]})
 
 
 @app.post("/api/queue/leave")
