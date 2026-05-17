@@ -26,6 +26,26 @@ h1 { font-size: 20px; margin-bottom: 2px; }
 .next-btn:active { transform: scale(0.97); }
 .next-btn:disabled { background: #21262d; color: #484f58; cursor: not-allowed; }
 
+/* Party-size buttons */
+.size-buttons {
+  display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px;
+}
+.size-btn {
+  flex: 1; min-width: 60px; padding: 14px 8px;
+  border: 1px solid #30363d; border-radius: 12px;
+  font-size: 14px; font-weight: 700; cursor: pointer;
+  background: #161b22; color: #e6edf3; transition: all .15s;
+  text-align: center; line-height: 1.3;
+}
+.size-btn:active { transform: scale(0.97); }
+.size-btn .count { font-size: 22px; font-weight: 800; display: block; }
+.size-btn .size-label { font-size: 11px; color: #8b949e; }
+.size-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.size-btn:disabled:active { transform: none; }
+.size-btn.primary { background: #238636; border-color: #238636; }
+.size-btn.primary .count { color: #fff; }
+.size-btn.primary .size-label { color: rgba(255,255,255,0.7); }
+
 .queue { list-style: none; }
 .queue-item {
   display: flex; align-items: center; gap: 12px;
@@ -55,6 +75,16 @@ h1 { font-size: 20px; margin-bottom: 2px; }
 .btn-seat { background: #238636; color: #fff; }
 .btn-skip { background: #21262d; color: #8b949e; }
 
+/* Reset button */
+.reset-area { margin-top: 16px; padding-top: 16px; border-top: 1px solid #21262d; }
+.reset-btn {
+  width: 100%; padding: 12px; border: 1px solid #30363d; border-radius: 10px;
+  font-size: 13px; font-weight: 600; cursor: pointer; transition: all .15s;
+  background: transparent; color: #8b949e;
+}
+.reset-btn:hover { border-color: #f85149; color: #f85149; }
+.reset-btn:active { transform: scale(0.97); }
+
 .three-dots { text-align: center; color: #484f58; padding: 8px; font-size: 12px; }
 </style>
 </head>
@@ -66,7 +96,9 @@ h1 { font-size: 20px; margin-bottom: 2px; }
   <div class="stat-box"><div class="num" id="called-num">-</div><div class="label">Called now</div></div>
 </div>
 
-<button class="next-btn" id="next-btn">🔔 Call Next</button>
+<div class="size-buttons" id="size-buttons">
+  <button class="size-btn any-btn" data-size="0" onclick="callSize(0)">🔔 Any</button>
+</div>
 
 <div id="queue-list"><div class="empty">No one waiting</div></div>
 <div class="three-dots">••• queue refreshes automatically •••</div>
@@ -89,6 +121,35 @@ h1 { font-size: 20px; margin-bottom: 2px; }
 
 <button class="btn btn-primary" id="gen-poster-btn" style="display:none;">🎨 Generate Poster</button>
 <button class="btn btn-primary" id="dl-poster-btn" style="display:none;background:#238636;">📥 Download Poster PNG</button>
+
+<div class="reset-area">
+  <button class="reset-btn" onclick="showResetModal()">🗑️ Reset ticket counter</button>
+</div>
+
+<!-- Reset confirmation modal -->
+<div class="modal-overlay" id="reset-modal">
+  <div class="modal-card" style="max-width:340px;">
+    <div style="font-size:40px;margin-bottom:12px;">🔄</div>
+    <h2 style="font-size:20px;margin-bottom:4px;">Reset Ticket Counter?</h2>
+    <p>This will reset the ticket number back to <strong>#1</strong> for the next customer.<br><br>
+    Existing queue entries will not be deleted — they keep their current numbers.</p>
+    <div class="modal-actions">
+      <button class="btn btn-seat" onclick="doReset()">🔄 Reset</button>
+      <button class="btn btn-skip" onclick="closeResetModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<style>
+.modal-overlay {
+  display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7);
+  align-items: center; justify-content: center; padding: 20px; z-index: 200;
+}
+.modal-overlay.show { display: flex; }
+.modal-card { background: #161b22; border: 1px solid #30363d; border-radius: 16px; padding: 24px; max-width: 360px; width: 100%; }
+.modal-card h2 { font-size: 32px; font-weight: 800; color: #e74c3c; margin-bottom: 4px; text-align: center; }
+.modal-card p { color: #8b949e; text-align: center; margin-bottom: 20px; font-size: 14px; line-height: 1.5; }
+</style>
 
 <div id="confirm-modal">
   <div class="modal-card" id="call-result">
@@ -114,9 +175,37 @@ function poll() {
   fetch(`/api/queue/${RID}/status`)
     .then(r => r.json())
     .then(data => {
-      document.getElementById('waiting-num').textContent = data.stats.waiting || 0;
+      const waitingCount = data.stats.waiting || 0;
+      document.getElementById('waiting-num').textContent = waitingCount;
       document.getElementById('called-num').textContent = data.stats.called || 0;
 
+      // Build per-size button counts
+      const sizeCounts = {};
+      data.waiting.forEach(e => {
+        const s = e.party_size;
+        sizeCounts[s] = (sizeCounts[s] || 0) + 1;
+      });
+
+      // Render size buttons
+      const container = document.getElementById('size-buttons');
+      const sizes = [1, 2, 3, 4, 5, 6];
+      let html = '<button class="size-btn any-btn" data-size="0" onclick="callSize(0)">' +
+        '<span class="count">' + waitingCount + '</span>' +
+        '<span class="size-label">Any</span></button>';
+
+      sizes.forEach(s => {
+        const count = sizeCounts[s] || 0;
+        const label = s >= 6 ? '6+' : s;
+        const person = s === 1 ? 'person' : 'people';
+        html += '<button class="size-btn" data-size="' + s + '" onclick="callSize(' + s + ')"' +
+          (count === 0 ? ' disabled' : '') + '>' +
+          '<span class="count">' + count + '</span>' +
+          '<span class="size-label">' + label + ' ' + person + '</span></button>';
+      });
+
+      container.innerHTML = html;
+
+      // Queue list
       const list = document.getElementById('queue-list');
       if (data.waiting.length === 0) {
         list.innerHTML = '<div class="empty">No one waiting</div>';
@@ -138,20 +227,22 @@ function poll() {
     .catch(() => {});
 }
 
-document.getElementById('next-btn').addEventListener('click', () => {
-  const btn = document.getElementById('next-btn');
-  btn.disabled = true; btn.textContent = '⏳ Calling...';
-
+function callSize(tableSize) {
   const fd = new FormData();
   fd.append('restaurant_id', RID);
   fd.append('passcode', PASSCODE);
+  fd.append('party_size', String(tableSize));
+
+  // Highlight active button
+  document.querySelectorAll('.size-btn').forEach(b => b.classList.remove('primary'));
+  const btn = document.querySelector(`.size-btn[data-size="${tableSize}"]`);
+  if (btn) btn.classList.add('primary');
 
   fetch('/api/queue/call', { method: 'POST', body: fd })
     .then(r => r.json())
     .then(data => {
       if (data.error === 'empty_queue') {
-        btn.textContent = '🔔 Call Next';
-        btn.disabled = false;
+        if (btn) btn.classList.remove('primary');
         return;
       }
       currentCalledEntry = data.entry_id;
@@ -159,15 +250,9 @@ document.getElementById('next-btn').addEventListener('click', () => {
       document.getElementById('call-size').textContent = `Party of ${data.party_size}`;
       document.getElementById('review-badge').style.display = data.review_opened || data.review_confirmed ? 'block' : 'none';
       document.getElementById('confirm-modal').classList.add('show');
-      btn.textContent = '🔔 Call Next';
-      btn.disabled = false;
-      poll(); // refresh
-    })
-    .catch(() => {
-      btn.textContent = '🔔 Call Next';
-      btn.disabled = false;
+      poll();
     });
-});
+}
 
 function confirmSeat() {
   const fd = new FormData();
@@ -192,6 +277,31 @@ function skipCall() {
   document.getElementById('confirm-modal').classList.remove('show');
   currentCalledEntry = null;
   poll();
+}
+
+// ── Reset counter ──────────────────────────────────────────────────────
+
+function showResetModal() {
+  document.getElementById('reset-modal').classList.add('show');
+}
+function closeResetModal() {
+  document.getElementById('reset-modal').classList.remove('show');
+}
+
+function doReset() {
+  const fd = new FormData();
+  fd.append('restaurant_id', RID);
+  fd.append('passcode', PASSCODE);
+
+  fetch('/api/restaurant/reset-counter', { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(() => {
+      closeResetModal();
+      poll();
+    })
+    .catch(() => {
+      closeResetModal();
+    });
 }
 
 // Initial + poll every 10s

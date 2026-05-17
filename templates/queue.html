@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<link rel="manifest" href="/queue/{{ restaurant_id }}/manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>{{ restaurant_name }} — QueueQ</title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -17,13 +20,40 @@ body {
 }
 h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
 .sub { color: #8b949e; font-size: 14px; margin-bottom: 20px; line-height: 1.5; }
+
+/* ── Live queue status ───────────────────────────────────────────── */
+
+.queue-status { display: flex; gap: 8px; margin-bottom: 16px; }
+.qs-box {
+  flex: 1; background: #0d1117; border: 1px solid #21262d;
+  border-radius: 12px; padding: 12px; text-align: center;
+}
+.qs-box .num { font-size: 22px; font-weight: 800; }
+.qs-box .label { font-size: 11px; color: #484f58; margin-top: 2px; }
+.qs-box.calm .num { color: #3fb950; }
+.qs-box.busy .num { color: #f0883e; }
+.qs-box.full .num { color: #f85149; }
+
+/* ── Bookmark bar ────────────────────────────────────────────────── */
+
+.bookmark-bar { display: flex; gap: 8px; align-items: center; margin-bottom: 18px; }
+.bookmark-btn {
+  flex: 1; padding: 12px; border: 1px solid #30363d; border-radius: 12px;
+  font-size: 14px; font-weight: 600; cursor: pointer; transition: all .15s;
+  background: #21262d; color: #e6edf3;
+}
+.bookmark-btn:active { transform: scale(0.97); }
+.bookmark-btn:hover { border-color: #8b949e; }
+
+/* ── Form ────────────────────────────────────────────────────────── */
+
 .form-group { margin-bottom: 14px; text-align: left; }
 .form-group label { font-size: 13px; color: #8b949e; margin-bottom: 4px; display: block; }
-.form-group input, .form-group select {
+.form-group select {
   width: 100%; padding: 14px 16px; border: 1px solid #30363d; border-radius: 12px;
   font-size: 16px; background: #0d1117; color: #e6edf3; outline: none;
 }
-.form-group input:focus { border-color: #e74c3c; }
+.form-group select:focus { border-color: #e74c3c; }
 .btn {
   width: 100%; padding: 16px; border: none; border-radius: 12px;
   font-size: 16px; font-weight: 700; cursor: pointer; transition: all .15s;
@@ -32,11 +62,11 @@ h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
 .btn-primary { background: #e74c3c; color: #fff; }
 .btn-primary:hover { background: #c0392b; }
 .btn-secondary { background: #21262d; color: #e6edf3; margin-top: 8px; }
+.btn-success { background: #238636; color: #fff; }
 
 .review-offer {
   background: #1a1a2e; border: 1px solid #30363d; border-radius: 12px;
-  padding: 16px; margin: 16px 0; text-align: center;
-  font-size: 15px; line-height: 1.5;
+  padding: 16px; margin: 16px 0; text-align: center; font-size: 15px; line-height: 1.5;
 }
 .review-offer strong { color: #d4b48c; }
 
@@ -48,12 +78,100 @@ h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
 
 .seated-card { display: none; text-align: center; }
 .seated-card h2 { font-size: 28px; color: #3fb950; margin-bottom: 8px; }
+
+/* ── Modal overlay ──────────────────────────────────────────────── */
+
+.modal-overlay {
+  display: none; position: fixed; inset: 0;
+  background: rgba(0,0,0,0.75);
+  align-items: center; justify-content: center;
+  padding: 20px; z-index: 1000;
+}
+.modal-overlay.show { display: flex; }
+.modal-card {
+  background: #161b22; border: 1px solid #30363d;
+  border-radius: 20px; padding: 28px 24px;
+  max-width: 380px; width: 100%; text-align: center;
+  animation: modal-in .25s ease-out;
+}
+@keyframes modal-in {
+  from { opacity: 0; transform: scale(0.92); }
+  to { opacity: 1; transform: scale(1); }
+}
+.modal-card .modal-icon { font-size: 48px; margin-bottom: 12px; }
+.modal-card h2 { font-size: 22px; font-weight: 800; margin-bottom: 8px; }
+.modal-card p { color: #8b949e; font-size: 14px; line-height: 1.6; margin-bottom: 20px; }
+.modal-card .modal-actions { display: flex; flex-direction: column; gap: 8px; }
+.modal-card .modal-actions .btn { padding: 14px; }
+
+/* ── Ready modal special ────────────────────────────────────────── */
+
+.ready-modal .modal-icon { animation: bounce 1s infinite; }
+@keyframes bounce {
+  0%,100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+.ready-modal .ticket-big { font-size: 56px; margin: 4px 0; }
+
+/* ── Install banner ───────────────────────────────────────────── */
+
+.install-banner {
+  display: flex; align-items: center; gap: 10px;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  border: 1px solid #30363d;
+  border-radius: 14px; padding: 14px; margin-bottom: 14px;
+  text-align: left;
+}
+.install-icon { font-size: 28px; flex-shrink: 0; }
+.install-text { flex: 1; font-size: 12px; color: #c9d1d9; line-height: 1.4; }
+.install-text strong { display: block; font-size: 13px; color: #e6edf3; margin-bottom: 2px; }
+.install-text span { color: #8b949e; }
+.install-btn {
+  flex-shrink: 0; padding: 8px 14px;
+  background: #238636; color: #fff; border: none; border-radius: 8px;
+  font-size: 12px; font-weight: 700; cursor: pointer;
+}
+.install-btn:active { transform: scale(0.96); }
 </style>
 </head>
 <body>
+
+<!-- ════════════════════════════════════════════════════════ -->
+<!-- JOIN CARD -->
+<!-- ════════════════════════════════════════════════════════ -->
+
 <div class="card" id="join-card">
   <h1>🏪 {{ restaurant_name }}</h1>
   <p class="sub">Join the queue and get a <strong>free dish</strong> when you leave a Google review!</p>
+
+  <!-- Add to Home Screen banner (shown on mobile) -->
+  <div id="install-banner" class="install-banner" style="display:none;">
+    <div class="install-icon">📲</div>
+    <div class="install-text">
+      <strong>Get notified when your table is ready!</strong>
+      <span id="install-steps">Add this page to your Home Screen for quick access!</span>
+    </div>
+    <button class="install-btn" id="install-btn" onclick="showBookmarkModal()">
+      Show Me How
+    </button>
+  </div>
+
+  <!-- Live queue status -->
+  <div class="queue-status" id="queue-status">
+    <div class="qs-box"><div class="num" id="qs-waiting">-</div><div class="label">Waiting</div></div>
+    <div class="qs-box"><div class="num" id="qs-estimate">-</div><div class="label">Est. Wait</div></div>
+    <div class="qs-box"><div class="num" id="qs-seated">-</div><div class="label">Seated Today</div></div>
+  </div>
+
+  <!-- Bookmark bar -->
+  <div class="bookmark-bar">
+    <button class="bookmark-btn" onclick="showBookmarkModal()">
+      🔖 Save Bookmark
+    </button>
+    <button class="bookmark-btn" id="share-btn" onclick="shareLink()" style="display:none;">
+      📤 Share
+    </button>
+  </div>
 
   <form id="join-form">
     <div class="form-group">
@@ -78,6 +196,10 @@ h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
   </div>
 </div>
 
+<!-- ════════════════════════════════════════════════════════ -->
+<!-- STATUS CARD (after joining) -->
+<!-- ════════════════════════════════════════════════════════ -->
+
 <div class="card" id="status-card">
   <div class="pulse">⏳</div>
   <p class="sub" style="margin-bottom:0;">{{ restaurant_name }}</p>
@@ -96,11 +218,112 @@ h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
       ✅ Thanks! Show this to the staff for your free dish.
     </div>
   </div>
+
+  <!-- Leave queue button (only when waiting) -->
+  <div id="leave-section" style="margin-top:16px;padding-top:16px;border-top:1px solid #21262d;">
+    <button class="btn btn-secondary" id="leave-btn" style="color:#f85149;border-color:#f85149;">
+      🚪 Leave Queue
+    </button>
+  </div>
 </div>
+
+<!-- ════════════════════════════════════════════════════════ -->
+<!-- LEAVE QUEUE CONFIRMATION MODAL -->
+<!-- ════════════════════════════════════════════════════════ -->
+
+<div class="modal-overlay" id="leave-modal">
+  <div class="modal-card">
+    <div class="modal-icon">🚪</div>
+    <h2>Leave the Queue?</h2>
+    <p>
+      You'll lose your spot. If you change your mind, you can scan the QR and join again.
+    </p>
+    <div class="modal-actions">
+      <button class="btn btn-primary" onclick="confirmLeave()" style="background:#f85149;">
+        Yes, Leave Queue
+      </button>
+      <button class="btn btn-secondary" onclick="closeLeaveModal()">
+        Stay in Queue
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════ -->
+<!-- SEATED CARD -->
+<!-- ════════════════════════════════════════════════════════ -->
 
 <div class="card seated-card" id="seated-card">
   <h2>✅ Enjoy your meal!</h2>
   <p class="sub">Hope you had a great time at {{ restaurant_name }}.<br>Don't forget to leave that Google review! ⭐</p>
+</div>
+
+<!-- ════════════════════════════════════════════════════════ -->
+<!-- BOOKMARK MODAL -->
+<!-- ════════════════════════════════════════════════════════ -->
+
+<div class="modal-overlay" id="bookmark-modal">
+  <div class="modal-card">
+    <div class="modal-icon" id="install-modal-icon">📲</div>
+    <h2 id="install-modal-title">Get Notified When Your Table is Ready</h2>
+    <p id="install-modal-desc">Add this page to your Home Screen for quick access to your queue status!</p>
+    
+    <div id="install-steps-ios" style="display:none;background:#1a1a2e;border-radius:10px;padding:14px;margin-bottom:16px;text-align:left;font-size:14px;line-height:1.8;">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+        <span style="background:#238636;color:#fff;border-radius:50%;width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0;">1</span>
+        <span>Tap the <strong>Share</strong> button <span style="font-size:20px;">⎔</span> at the bottom</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+        <span style="background:#238636;color:#fff;border-radius:50%;width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0;">2</span>
+        <span>Scroll down and tap <strong>"Add to Home Screen"</strong></span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span style="background:#238636;color:#fff;border-radius:50%;width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0;">3</span>
+        <span>Tap <strong>"Add"</strong> in the top right corner ✅</span>
+      </div>
+      <p style="margin-top:10px;color:#3fb950;font-size:13px;text-align:center;">🎉 Done! You'll find this page on your Home Screen!</p>
+    </div>
+
+    <div id="install-steps-android" style="display:none;background:#1a1a2e;border-radius:10px;padding:14px;margin-bottom:16px;text-align:left;font-size:14px;line-height:1.8;">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+        <span style="background:#238636;color:#fff;border-radius:50%;width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0;">1</span>
+        <span>Tap the <strong>menu</strong> button <span style="font-size:20px;">⋮</span> (top right)</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+        <span style="background:#238636;color:#fff;border-radius:50%;width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0;">2</span>
+        <span>Tap <strong>"Add to Home Screen"</strong></span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span style="background:#238636;color:#fff;border-radius:50%;width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0;">3</span>
+        <span>Tap <strong>"Add"</strong> ✅</span>
+      </div>
+      <p style="margin-top:10px;color:#3fb950;font-size:13px;text-align:center;">🎉 Done! You'll find this page on your Home Screen!</p>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn btn-success" onclick="closeBookmarkModal()">
+        ✅ Got it!
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════ -->
+<!-- TABLE-READY MODAL -->
+<!-- ════════════════════════════════════════════════════════ -->
+
+<div class="modal-overlay ready-modal" id="ready-modal">
+  <div class="modal-card">
+    <div class="modal-icon">🪑</div>
+    <h2 style="color:#3fb950;">Table Ready!</h2>
+    <div class="ticket-big" id="ready-ticket">#-</div>
+    <p id="ready-text">Your table at {{ restaurant_name }} is ready!<br>Please go to the counter now.</p>
+    <div class="modal-actions">
+      <button class="btn btn-success" onclick="closeReadyModal()">
+        ✅ Got it, I'm going!
+      </button>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -110,8 +333,132 @@ localStorage.setItem('queueq_token', CLIENT_TOKEN);
 
 let currentEntryId = localStorage.getItem(`queueq_entry_${RID}`);
 let pollTimer = null;
+let queuePollTimer = null;
+let previousStatus = null;
 
-// Auto-restore if already joined
+// ── Live Queue Status ───────────────────────────────────────────────────
+
+async function pollQueueStatus() {
+  try {
+    const res = await fetch(`/api/queue/${RID}/status`);
+    const data = await res.json();
+    const waiting = data.stats.waiting || 0;
+    const seated = data.stats.seated || 0;
+
+    document.getElementById('qs-waiting').textContent = waiting;
+    document.getElementById('qs-seated').textContent = seated;
+
+    const estMin = waiting * 10;
+    document.getElementById('qs-estimate').textContent =
+      waiting === 0 ? 'Now' : waiting <= 3 ? `~${estMin}min` : `~${estMin}+ min`;
+
+    const boxes = document.querySelectorAll('.qs-box');
+    boxes.forEach(b => {
+      b.classList.remove('calm', 'busy', 'full');
+      if (waiting === 0) b.classList.add('calm');
+      else if (waiting <= 5) b.classList.add('busy');
+      else b.classList.add('full');
+    });
+  } catch (e) {}
+}
+
+// ── Bookmark Modal ──────────────────────────────────────────────────────
+
+function showBookmarkModal() {
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+  const isAndroid = /Android/i.test(navigator.userAgent);
+  document.getElementById('install-steps-ios').style.display = isIOS ? 'block' : 'none';
+  document.getElementById('install-steps-android').style.display = isAndroid ? 'block' : 'none';
+  document.getElementById('bookmark-modal').classList.add('show');
+}
+
+function closeBookmarkModal() {
+  document.getElementById('bookmark-modal').classList.remove('show');
+}
+
+function doSaveBookmark() {
+  const url = window.location.href;
+
+  // Try Web Share API first (mobile — includes "Add to Home Screen")
+  if (navigator.share) {
+    navigator.share({
+      title: document.title,
+      text: 'Check the queue at ' + document.title + ' before you go!',
+      url: url,
+    }).then(() => {
+      closeBookmarkModal();
+    }).catch(() => {
+      // user cancelled — stay on modal
+    });
+    return;
+  }
+
+  // Fallback: copy to clipboard
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(url).then(() => {
+      closeBookmarkModal();
+    }).catch(() => { manualCopy(url); });
+  } else {
+    manualCopy(url);
+  }
+}
+
+function manualCopy(url) {
+  const ta = document.createElement('textarea');
+  ta.value = url;
+  ta.style.position = 'fixed'; ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.select();
+  document.execCommand('copy');
+  document.body.removeChild(ta);
+  closeBookmarkModal();
+}
+
+function shareLink() { showBookmarkModal(); }
+
+// Remove old share button display — we always show bookmark modal now
+// (The share-btn visibility logic was removed since both use the same modal)
+
+// ── Table-Ready Modal ───────────────────────────────────────────────────
+
+function showReadyModal(ticketNumber) {
+  document.getElementById('ready-ticket').textContent = '#' + ticketNumber;
+  document.getElementById('ready-modal').classList.add('show');
+}
+
+function closeReadyModal() {
+  document.getElementById('ready-modal').classList.remove('show');
+}
+
+// ── Leave Queue ───────────────────────────────────────────────────────
+
+function showLeaveModal() {
+  document.getElementById('leave-modal').classList.add('show');
+}
+function closeLeaveModal() {
+  document.getElementById('leave-modal').classList.remove('show');
+}
+
+async function confirmLeave() {
+  if (!currentEntryId) return;
+  const fd = new FormData();
+  fd.append('entry_id', currentEntryId);
+  try {
+    await fetch('/api/queue/leave', { method: 'POST', body: fd });
+  } catch (e) {}
+  closeLeaveModal();
+  // Go back to join card
+  localStorage.removeItem(`queueq_entry_${RID}`);
+  document.getElementById('status-card').style.display = 'none';
+  document.getElementById('join-card').style.display = 'block';
+  if (pollTimer) clearInterval(pollTimer);
+  currentEntryId = null;
+}
+
+document.getElementById('leave-btn').addEventListener('click', showLeaveModal);
+
+// ── Auto-restore if already joined ─────────────────────────────────────
+
 if (currentEntryId) {
   fetch(`/api/queue/entry/${currentEntryId}`)
     .then(r => r.json())
@@ -124,6 +471,28 @@ if (currentEntryId) {
     })
     .catch(() => localStorage.removeItem(`queueq_entry_${RID}`));
 }
+
+// ── Show install banner on mobile ─────────────────────────────────────
+const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+const isMobile = /Mobi|Android/i.test(navigator.userAgent) || isIOS;
+const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+
+if (isMobile && !isStandalone) {
+  const banner = document.getElementById('install-banner');
+  const steps = document.getElementById('install-steps');
+  banner.style.display = 'flex';
+  if (isIOS) {
+    steps.textContent = 'Tap the Share button, then "Add to Home Screen".';
+  } else {
+    steps.textContent = 'Tap the menu ⋮ → "Add to Home Screen".';
+  }
+}
+
+// ── Start polling queue status ─────────────────────────────────────────
+pollQueueStatus();
+queuePollTimer = setInterval(pollQueueStatus, 10000);
+
+// ── Join form ──────────────────────────────────────────────────────────
 
 document.getElementById('join-form').addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -147,28 +516,35 @@ document.getElementById('join-form').addEventListener('submit', async (e) => {
   showStatus(data.ticket_number, data.entry_id);
 });
 
+// ── Status display (after joining) ─────────────────────────────────────
+
 function showStatus(ticket, entryId) {
   document.getElementById('join-card').style.display = 'none';
   document.getElementById('status-card').style.display = 'block';
-  document.getElementById('ticket-display').textContent = `#${ticket}`;
+  document.getElementById('ticket-display').textContent = '#' + ticket;
   currentEntryId = entryId;
   updatePosition();
 
-  document.getElementById('review-btn').addEventListener('click', async () => {
-    // Mark review as opened
+  // Clear old listeners by cloning the button
+  const oldBtn = document.getElementById('review-btn');
+  const newBtn = oldBtn.cloneNode(true);
+  newBtn.id = 'review-btn';
+  newBtn.addEventListener('click', async () => {
     const fd = new FormData();
     fd.append('entry_id', entryId);
     await fetch('/api/queue/review-opened', { method: 'POST', body: fd });
-
-    // Open Google Maps review
     const reviewName = encodeURIComponent('{{ restaurant_name }}');
-    const reviewUrl = `https://www.google.com/maps/search/${reviewName}/?hl=en`;
-    window.open(reviewUrl, '_blank');
-
+    window.open('https://www.google.com/maps/search/' + reviewName + '/?hl=en', '_blank');
     document.getElementById('review-done').style.display = 'block';
-    document.getElementById('review-btn').style.display = 'none';
+    newBtn.style.display = 'none';
   });
+  oldBtn.parentNode.replaceChild(newBtn, oldBtn);
 
+  // Reset review-done text
+  document.getElementById('review-done').style.display = 'none';
+
+  // Clear old poll timer before setting a new one
+  if (pollTimer) clearInterval(pollTimer);
   pollTimer = setInterval(updatePosition, 10000);
 }
 
@@ -181,6 +557,7 @@ async function updatePosition() {
     if (data.status === 'seated') {
       document.getElementById('status-card').style.display = 'none';
       document.getElementById('seated-card').style.display = 'block';
+      document.getElementById('leave-section').style.display = 'none';
       localStorage.removeItem(`queueq_entry_${RID}`);
       if (pollTimer) clearInterval(pollTimer);
       return;
@@ -190,10 +567,20 @@ async function updatePosition() {
       document.getElementById('position-display').textContent =
         '🔔 Table is ready! Please go to the counter.';
       document.getElementById('position-display').style.color = '#3fb950';
+      document.getElementById('leave-section').style.display = 'none';
+
+      // Show a big popup modal on first detection
+      if (previousStatus !== 'called') {
+        showReadyModal(data.ticket_number);
+        // Also vibrate if available
+        if (navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 400]);
+      }
+      previousStatus = 'called';
       return;
     }
 
-    // Still waiting
+    previousStatus = data.status;
+
     const posRes = await fetch(`/api/queue/${RID}/status`);
     const queue = await posRes.json();
     const myTicket = data.ticket_number;
@@ -202,11 +589,11 @@ async function updatePosition() {
 
     if (ahead <= 0 && total > 0) {
       document.getElementById('position-display').textContent =
-        '🔔 You\'re NEXT! Almost ready!';
+        "🔔 You're NEXT! Almost ready!";
       document.getElementById('position-display').style.color = '#f0883e';
     } else {
       document.getElementById('position-display').textContent =
-        `${ahead} party(ies) ahead of you · ${total} total waiting`;
+        ahead + ' party(ies) ahead of you · ' + total + ' total waiting';
       document.getElementById('position-display').style.color = '#8b949e';
     }
   } catch (e) {}

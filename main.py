@@ -5,14 +5,13 @@ leaves a Google review, gets a free dish. That's it.
 
 import os
 import uuid
-import json
 import sqlite3
 import logging
+import socket
 from datetime import datetime, timezone
 from pathlib import Path
 
 import io
-import httpx
 from fastapi import FastAPI, HTTPException, Form, File, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -23,6 +22,29 @@ import uvicorn
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("queueq")
+
+
+def _get_local_ip():
+    """Get the machine's local LAN IP address (not localhost/127.0.0.1)."""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return "localhost"
+
+
+def _get_base_url():
+    """Get the base URL using local IP for LAN access."""
+    env_url = os.getenv("QUEUEQ_URL")
+    if env_url:
+        return env_url
+    ip = _get_local_ip()
+    port = os.getenv("PORT", "8000")
+    return f"http://{ip}:{port}"
+
 
 app = FastAPI(title="QueueQ")
 
@@ -102,6 +124,32 @@ async def queue_page(restaurant_id: str):
     return HTMLResponse(render("queue.html", restaurant_id=restaurant_id, restaurant_name=rest["name"]))
 
 
+@app.get("/queue/{restaurant_id}/manifest.json")
+async def queue_manifest(restaurant_id: str):
+    """Dynamic PWA manifest so Home Screen opens the queue page, not the landing page."""
+    conn = get_db()
+    rest = conn.execute("SELECT * FROM restaurants WHERE id = ?", (restaurant_id,)).fetchone()
+    conn.close()
+    if not rest:
+        raise HTTPException(404)
+    base_url = _get_base_url()
+    manifest = {
+        "name": f"QueueQ — {rest['name']}",
+        "short_name": rest['name'],
+        "description": f"Check wait time and join the queue at {rest['name']}.",
+        "start_url": f"/queue/{restaurant_id}",
+        "scope": "/",
+        "display": "standalone",
+        "background_color": "#0d1117",
+        "theme_color": "#161b22",
+        "icons": [
+            {"src": "/static/icon-192.png", "sizes": "192x192", "type": "image/png"},
+            {"src": "/static/badge-72.png", "sizes": "72x72", "type": "image/png"},
+        ]
+    }
+    return JSONResponse(manifest)
+
+
 @app.get("/status/{entry_id}", response_class=HTMLResponse)
 async def status_page(entry_id: str):
     conn = get_db()
@@ -119,6 +167,7 @@ async def status_page(entry_id: str):
     return HTMLResponse(render(
         "status.html",
         entry_id=entry_id,
+        restaurant_id=entry["restaurant_id"],
         restaurant_name=rest["name"],
         ticket_number=entry["ticket_number"],
         party_size=entry["party_size"],
@@ -155,10 +204,24 @@ async def create_restaurant(name: str = Form(...), passcode: str = Form(...)):
                  (rid, name, passcode, now))
     conn.commit()
     conn.close()
-    base_url = os.getenv("QUEUEQ_URL", f"http://localhost:{os.getenv('PORT', '8000')}")
+    base_url = _get_base_url()
     queue_url = f"{base_url}/queue/{rid}"
     qr_svg = qrcode.make(queue_url, image_factory=qrcode.image.svg.SvgPathImage).to_string().decode()
     return JSONResponse({"restaurant_id": rid, "queue_url": queue_url, "qr_svg": qr_svg})
+
+
+@app.post("/api/restaurant/reset-counter")
+async def reset_counter(restaurant_id: str = Form(...), passcode: str = Form("")):
+    """Reset ticket counter back to 0 (new day). Does not delete queue entries."""
+    conn = get_db()
+    rest = conn.execute("SELECT * FROM restaurants WHERE id = ?", (restaurant_id,)).fetchone()
+    if not rest or rest["passcode"] != passcode:
+        conn.close()
+        raise HTTPException(403, "Wrong passcode")
+    conn.execute("UPDATE restaurants SET ticket_counter = 0 WHERE id = ?", (restaurant_id,))
+    conn.commit()
+    conn.close()
+    return JSONResponse({"status": "ok", "counter": 0})
 
 
 @app.post("/api/queue/join")
@@ -194,18 +257,32 @@ async def join_queue(restaurant_id: str = Form(...), party_size: int = Form(1), 
 
 
 @app.post("/api/queue/call")
-async def call_next(restaurant_id: str = Form(...), passcode: str = Form("")):
+async def call_next(restaurant_id: str = Form(...), passcode: str = Form(""), party_size: int = Form(0)):
     conn = get_db()
     rest = conn.execute("SELECT * FROM restaurants WHERE id = ?", (restaurant_id,)).fetchone()
     if not rest or rest["passcode"] != passcode:
         conn.close()
         raise HTTPException(403, "Wrong passcode")
 
-    # Pick longest-waiting entry
-    entry = conn.execute(
-        "SELECT * FROM queue_entries WHERE restaurant_id = ? AND status = 'waiting' ORDER BY ticket_number ASC LIMIT 1",
-        (restaurant_id,),
-    ).fetchone()
+    # Pick longest-waiting entry — filter by table size if specified
+    # Priority: exact size match first, then smaller parties
+    if party_size > 0:
+        # Try exact size match first (longest-waiting)
+        entry = conn.execute(
+            "SELECT * FROM queue_entries WHERE restaurant_id = ? AND status = 'waiting' AND party_size = ? ORDER BY ticket_number ASC LIMIT 1",
+            (restaurant_id, party_size),
+        ).fetchone()
+        # Fall back to smaller parties that fit
+        if not entry:
+            entry = conn.execute(
+                "SELECT * FROM queue_entries WHERE restaurant_id = ? AND status = 'waiting' AND party_size < ? ORDER BY party_size DESC, ticket_number ASC LIMIT 1",
+                (restaurant_id, party_size),
+            ).fetchone()
+    else:
+        entry = conn.execute(
+            "SELECT * FROM queue_entries WHERE restaurant_id = ? AND status = 'waiting' ORDER BY ticket_number ASC LIMIT 1",
+            (restaurant_id,),
+        ).fetchone()
 
     if not entry:
         conn.close()
@@ -238,6 +315,25 @@ async def seat_customer(entry_id: str = Form(...), restaurant_id: str = Form(...
     conn.commit()
     conn.close()
     return JSONResponse({"status": "seated"})
+
+
+@app.post("/api/queue/leave")
+async def leave_queue(entry_id: str = Form(...)):
+    """Cancel a waiting queue entry — customer leaves the queue."""
+    conn = get_db()
+    entry = conn.execute("SELECT * FROM queue_entries WHERE id = ?", (entry_id,)).fetchone()
+    if not entry:
+        conn.close()
+        raise HTTPException(404, "Entry not found")
+    if entry["status"] not in ("waiting", "called"):
+        conn.close()
+        return JSONResponse({"error": "cannot_leave", "status": entry["status"]})
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute("UPDATE queue_entries SET status = 'cancelled', called_at = ? WHERE id = ?",
+                 (now, entry_id))
+    conn.commit()
+    conn.close()
+    return JSONResponse({"status": "cancelled"})
 
 
 @app.post("/api/queue/review-opened")
@@ -293,7 +389,7 @@ async def generate_poster(restaurant_id: str, photo: UploadFile = File(...)):
     if not rest:
         raise HTTPException(404)
 
-    base_url = os.getenv("QUEUEQ_URL", f"http://localhost:{os.getenv('PORT', '8000')}")
+    base_url = _get_base_url()
     queue_url = f"{base_url}/queue/{restaurant_id}"
 
     photo_bytes = await photo.read()
@@ -359,4 +455,5 @@ async def generate_poster(restaurant_id: str, photo: UploadFile = File(...)):
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
+    logger.info("Starting HTTP on port %d", port)
     uvicorn.run("main:app", host="0.0.0.0", port=port)
