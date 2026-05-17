@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<link rel="manifest" href="/queue/{{ restaurant_id }}/manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>{{ restaurant_name }} — QueueQ Status</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  background: #0d1117; color: #e6edf3;
+  min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px;
+}
+.card {
+  background: #161b22; border: 1px solid #30363d; border-radius: 20px;
+  padding: 32px 24px; max-width: 400px; width: 100%; text-align: center;
+}
+h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+.sub { color: #8b949e; font-size: 14px; margin-bottom: 16px; line-height: 1.5; }
+.ticket-big { font-size: 72px; font-weight: 800; color: #e74c3c; margin: 8px 0; }
+.position-text { font-size: 16px; margin-bottom: 12px; }
+.pulse { animation: pulse 2s infinite; }
+@keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+.status-called { color: #3fb950; font-size: 18px; font-weight: 700; }
+.status-waiting { color: #f0883e; }
+.status-seated { color: #8b949e; }
+
+.review-section {
+  background: #1a1a2e; border: 1px solid #30363d; border-radius: 12px;
+  padding: 16px; margin-top: 16px;
+}
+.review-section .badge { display: inline-block; padding: 4px 12px; border-radius: 6px; font-size: 13px; margin-top: 8px; }
+.badge-yes { background: #12291a; color: #3fb950; }
+.badge-no { background: #290a0a; color: #f85149; }
+
+/* ── Modal overlay ──────────────────────────────────────────────── */
+.modal-overlay {
+  display: none; position: fixed; inset: 0;
+  background: rgba(0,0,0,0.75);
+  align-items: center; justify-content: center;
+  padding: 20px; z-index: 1000;
+}
+.modal-overlay.show { display: flex; }
+.modal-card {
+  background: #161b22; border: 1px solid #30363d;
+  border-radius: 20px; padding: 28px 24px;
+  max-width: 380px; width: 100%; text-align: center;
+  animation: modal-in .25s ease-out;
+}
+@keyframes modal-in {
+  from { opacity: 0; transform: scale(0.92); }
+  to { opacity: 1; transform: scale(1); }
+}
+.modal-card .modal-icon { font-size: 48px; margin-bottom: 12px; }
+.modal-card h2 { font-size: 22px; font-weight: 800; margin-bottom: 8px; }
+.modal-card p { color: #8b949e; font-size: 14px; line-height: 1.6; margin-bottom: 20px; }
+.modal-card .btn {
+  width: 100%; padding: 14px; border: none; border-radius: 12px;
+  font-size: 16px; font-weight: 700; cursor: pointer; transition: all .15s;
+}
+.modal-card .btn:active { transform: scale(0.97); }
+.btn-success { background: #238636; color: #fff; }
+
+/* ── Ready modal special ────────────────────────────────────────── */
+.ready-modal .modal-icon { animation: bounce 1s infinite; }
+@keyframes bounce {
+  0%,100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>{{ restaurant_name }}</h1>
+  <p class="sub" id="entry-sub">Queue Ticket</p>
+  <div class="ticket-big" id="ticket-num">#{{ ticket_number }}</div>
+  <p class="position-text" id="status-msg">Loading...</p>
+  <p class="sub" id="party-info">Party of {{ party_size }}</p>
+
+  <div class="review-section" id="review-section" style="display:none;">
+    <p>🍜 <strong>Review for a free dish!</strong></p>
+    <span id="review-badge" class="badge badge-no">Not yet reviewed</span>
+  </div>
+
+  <!-- Leave queue button -->
+  <button class="btn" id="leave-btn" style="display:none;margin-top:16px;border:1px solid #f85149;color:#f85149;background:transparent;" onclick="showLeaveModal()">
+    🚪 Leave Queue
+  </button>
+</div>
+
+<!-- ════════════════════════════════════════════════════════ -->
+<!-- LEAVE QUEUE MODAL -->
+<!-- ════════════════════════════════════════════════════════ -->
+
+<div class="modal-overlay" id="leave-modal">
+  <div class="modal-card">
+    <div class="modal-icon">🚪</div>
+    <h2>Leave the Queue?</h2>
+    <p>
+      You'll lose your spot. If you change your mind, scan the QR again.
+    </p>
+    <div class="modal-actions">
+      <button class="btn" style="background:#f85149;color:#fff;width:100%;padding:14px;border:none;border-radius:12px;font-size:16px;font-weight:700;cursor:pointer;" onclick="confirmLeave()">
+        Yes, Leave Queue
+      </button>
+      <button class="btn" style="background:#21262d;color:#8b949e;width:100%;padding:14px;border:none;border-radius:12px;font-size:16px;font-weight:700;cursor:pointer;margin-top:8px;" onclick="closeLeaveModal()">
+        Stay in Queue
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════ -->
+<!-- TABLE-READY MODAL -->
+<!-- ════════════════════════════════════════════════════════ -->
+
+<div class="modal-overlay ready-modal" id="ready-modal">
+  <div class="modal-card">
+    <div class="modal-icon">🪑</div>
+    <h2 style="color:#3fb950;">Table Ready!</h2>
+    <div class="ticket-big" style="font-size:56px;margin:4px 0;" id="ready-ticket">#{{ ticket_number }}</div>
+    <p>Your table at {{ restaurant_name }} is ready!<br>Please go to the counter now.</p>
+    <div class="modal-actions">
+      <button class="btn btn-success" onclick="closeReadyModal()">
+        ✅ Got it, I'm going!
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+const ENTRY_ID = '{{ entry_id }}';
+let pollTimer = null;
+let previousStatus = null;
+
+async function poll() {
+  try {
+    const res = await fetch(`/api/queue/entry/${ENTRY_ID}`);
+    const data = await res.json();
+
+    const statusMsg = document.getElementById('status-msg');
+    const ticketNum = document.getElementById('ticket-num');
+    const reviewSection = document.getElementById('review-section');
+    const leaveBtn = document.getElementById('leave-btn');
+
+    // Show leave button only when waiting or called
+    leaveBtn.style.display = (data.status === 'waiting' || data.status === 'called') ? 'block' : 'none';
+
+    if (data.status === 'called') {
+      statusMsg.className = 'position-text status-called';
+      statusMsg.textContent = '🔔 TABLE IS READY! Please go to the counter.';
+      if (previousStatus !== 'called') {
+        showReadyModal(data.ticket_number);
+        if (navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 400]);
+      }
+    } else if (data.status === 'seated') {
+      statusMsg.className = 'position-text status-seated';
+      statusMsg.textContent = '✅ Enjoy your meal! 🎉';
+      ticketNum.style.color = '#3fb950';
+      leaveBtn.style.display = 'none';
+      if (pollTimer) clearInterval(pollTimer);
+    } else if (data.status === 'waiting') {
+      statusMsg.className = 'position-text status-waiting';
+      const qRes = await fetch(`/api/queue/${data.restaurant_id}/status`);
+      const queue = await qRes.json();
+      const ahead = (queue.waiting || []).filter(e => e.ticket_number < data.ticket_number).length;
+      statusMsg.textContent = ahead <= 0
+        ? "🔔 You're NEXT! Almost ready!"
+        : ahead + ' party(ies) ahead of you';
+    } else {
+      statusMsg.className = 'position-text';
+      statusMsg.textContent = 'Status: ' + data.status;
+    }
+
+    previousStatus = data.status;
+
+    // Review section
+    if (data.review_opened || data.review_confirmed) {
+      reviewSection.style.display = 'block';
+      document.getElementById('review-badge').className = 'badge badge-yes';
+      document.getElementById('review-badge').textContent = '✅ Thanks for reviewing!';
+    } else {
+      reviewSection.style.display = 'block';
+      document.getElementById('review-badge').className = 'badge badge-no';
+      document.getElementById('review-badge').textContent = '📝 Leave a Google review for a free dish!';
+    }
+  } catch (e) {}
+}
+
+// ── Leave Queue ───────────────────────────────────────────────────────
+
+function showLeaveModal() {
+  document.getElementById('leave-modal').classList.add('show');
+}
+function closeLeaveModal() {
+  document.getElementById('leave-modal').classList.remove('show');
+}
+
+async function confirmLeave() {
+  const fd = new FormData();
+  fd.append('entry_id', ENTRY_ID);
+  try {
+    await fetch('/api/queue/leave', { method: 'POST', body: fd });
+  } catch (e) {}
+  closeLeaveModal();
+  document.getElementById('leave-btn').style.display = 'none';
+  document.getElementById('ticket-num').style.color = '#8b949e';
+  document.getElementById('status-msg').textContent = '🚪 You left the queue.';
+  document.getElementById('status-msg').style.color = '#8b949e';
+  if (pollTimer) clearInterval(pollTimer);
+}
+
+// ── Table-Ready Modal ───────────────────────────────────────────────────
+
+function showReadyModal(ticketNumber) {
+  document.getElementById('ready-ticket').textContent = '#' + ticketNumber;
+  document.getElementById('ready-modal').classList.add('show');
+}
+
+function closeReadyModal() {
+  document.getElementById('ready-modal').classList.remove('show');
+}
+
+poll();
+pollTimer = setInterval(poll, 5000);
+</script>
+</body>
+</html>
