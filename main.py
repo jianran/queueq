@@ -8,7 +8,6 @@ import uuid
 import json
 import sqlite3
 import logging
-import socket
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -31,26 +30,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("queueq")
 
 
-def _get_local_ip():
-    """Get the machine's local LAN IP address (not localhost/127.0.0.1)."""
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("8.8.8.8", 80))
-        ip = s.getsockname()[0]
-        s.close()
-        return ip
-    except Exception:
-        return "localhost"
-
-
 def _get_base_url():
-    """Get the base URL using local IP for LAN access."""
+    """Get the base URL for QR codes."""
     env_url = os.getenv("QUEUEQ_URL")
     if env_url:
-        return env_url
-    ip = _get_local_ip()
-    port = os.getenv("PORT", "8000")
-    return f"http://{ip}:{port}"
+        return env_url.rstrip("/")
+    return "https://1b482b05-e819-4ed8-b659-1d3fa0d5f106-00-rvafaujaazq9.pike.replit.dev"
 
 
 app = FastAPI(title="QueueQ")
