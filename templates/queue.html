@@ -175,6 +175,10 @@ h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
 
   <form id="join-form">
     <div class="form-group">
+      <label>Phone Number</label>
+      <input type="tel" id="phone-number" placeholder="e.g. 012-345-6789" style="width:100%;padding:14px 16px;border:1px solid #30363d;border-radius:12px;font-size:16px;background:#0d1117;color:#e6edf3;outline:none;">
+    </div>
+    <div class="form-group">
       <label>Party Size</label>
       <select id="party-size">
         <option value="1">1 person</option>
@@ -219,8 +223,22 @@ h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
     </div>
   </div>
 
+  <!-- Push status indicator -->
+  <div id="push-section" style="margin-top:16px;padding-top:16px;border-top:1px solid #21262d;">
+    <div id="push-status" style="display:flex;align-items:center;gap:8px;font-size:12px;padding:8px 10px;border-radius:8px;">
+      <span id="push-icon">⏳</span>
+      <span id="push-text">Checking notification status...</span>
+    </div>
+    <button id="push-retry-btn" style="display:none;width:100%;margin-top:6px;padding:10px;border:1px solid #30363d;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;background:#21262d;color:#8b949e;">
+      🔔 Enable Notifications
+    </button>
+    <button id="push-install-btn" style="display:none;width:100%;margin-top:6px;padding:10px;border:1px solid #30363d;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;background:#1a1a2e;color:#d4b48c;" onclick="showBookmarkModal()">
+      📲 Add to Home Screen for Notifications
+    </button>
+  </div>
+
   <!-- Leave queue button (only when waiting) -->
-  <div id="leave-section" style="margin-top:16px;padding-top:16px;border-top:1px solid #21262d;">
+  <div id="leave-section" style="margin-top:8px;">
     <button class="btn btn-secondary" id="leave-btn" style="color:#f85149;border-color:#f85149;">
       🚪 Leave Queue
     </button>
@@ -457,51 +475,91 @@ async function confirmLeave() {
 
 document.getElementById('leave-btn').addEventListener('click', showLeaveModal);
 
+// Retry push subscription on button click (preserves user gesture for iOS)
+document.getElementById('push-retry-btn').addEventListener('click', () => {
+  if (currentEntryId) subscribePush(currentEntryId);
+});
+
 // ── Push Notification Setup ────────────────────────────────────────────
 
 async function subscribePush(entryId) {
   const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-  const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+  const isStandalone = window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches;
+
+  // Log browser capabilities for diagnostics
+  console.log('Push diag:', {
+    isIOS, isStandalone,
+    hasNotification: 'Notification' in window,
+    hasSW: 'serviceWorker' in navigator,
+    hasPushManager: 'PushManager' in window,
+    permission: 'Notification' in window ? Notification.permission : 'N/A'
+  });
 
   if (!('Notification' in window && 'serviceWorker' in navigator && 'PushManager' in window)) {
-    showToast('Push not supported on this browser', true);
+    // iOS < 16.4 or browser without Push API — use audio alert fallback
+    updatePushStatusUI('🔊', 'Keep this page open — alert sounds when ready!', 'inactive');
     return;
   }
-  if (Notification.permission === 'denied') return;
+  if (Notification.permission === 'denied') {
+    updatePushStatusUI('🔕', 'Notifications blocked — enable in Settings', 'error');
+    return;
+  }
+
+  // On iOS, push only works from Home Screen (standalone PWA)
+  if (isIOS && !isStandalone) {
+    updatePushStatusUI('📲', 'Add to Home Screen for notifications', 'inactive');
+    return;
+  }
 
   try {
+    updatePushStatusUI('⏳', 'Requesting notification permission...', 'checking');
+
     const permission = await Notification.requestPermission();
+    console.log('Push: permission result:', permission);
+
     if (permission !== 'granted') {
-      if (isIOS) showToast('📱 Allow notifications to get queue updates', true);
+      updatePushStatusUI('🔕', 'Notifications not allowed — please enable in Settings', 'error');
       return;
     }
 
+    updatePushStatusUI('⏳', 'Setting up notifications...', 'checking');
     const reg = await navigator.serviceWorker.ready;
+
     const keyRes = await fetch('/api/vapid-public-key');
     const keyData = await keyRes.json();
+    console.log('Push: got VAPID key, length:', keyData.public_key.length);
+
     const keyBytes = Uint8Array.from(
       atob(keyData.public_key.replace(/_/g, '/').replace(/-/g, '+')),
       c => c.charCodeAt(0)
     );
-    console.log('Push: requesting subscribe, key length:', keyBytes.length);
+
     const sub = await reg.pushManager.subscribe({
       userVisibleOnly: true,
       applicationServerKey: keyBytes,
     });
     console.log('Push: subscribed, endpoint:', sub.endpoint?.substring(0, 60));
+
     const fd = new FormData();
     fd.append('entry_id', entryId);
     fd.append('subscription', JSON.stringify(sub.toJSON()));
     const subRes = await fetch('/api/push/subscribe', { method: 'POST', body: fd });
+
     if (subRes.ok) {
+      updatePushStatusUI('✅', 'Notifications active! 🔔', 'active');
       console.log('✅ Push subscribed for entry', entryId);
     } else {
-      console.warn('Push subscribe API failed:', subRes.status, await subRes.text());
+      updatePushStatusUI('❌', 'Failed to save notification subscription', 'error');
+      const errBody = await subRes.text();
+      console.warn('Push subscribe API failed:', subRes.status, errBody);
     }
   } catch (e) {
-    console.error('Push subscribe failed:', e);
-    if (isIOS) {
-      showToast('📱 Add to Home Screen first, then allow notifications', true);
+    console.error('Push subscribe error:', e.name, e.message);
+    // On iOS, pushManager.subscribe() fails if not in standalone mode
+    if (isIOS && !isStandalone) {
+      updatePushStatusUI('📲', 'Add to Home Screen for notifications', 'inactive');
+    } else {
+      updatePushStatusUI('❌', 'Notification setup failed: ' + e.message, 'error');
     }
   }
 }
@@ -509,7 +567,7 @@ async function subscribePush(entryId) {
 // Register service worker with root scope for push notifications
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/static/sw.js', { scope: '/' })
+    navigator.serviceWorker.register('/sw.js', { scope: '/' })
       .then(reg => { console.log('SW registered, scope:', reg.scope); })
       .catch(e => console.error('SW reg failed:', e));
   });
@@ -555,14 +613,39 @@ queuePollTimer = setInterval(pollQueueStatus, 10000);
 
 document.getElementById('join-form').addEventListener('submit', async (e) => {
   e.preventDefault();
+  const btn = document.querySelector('#join-form .btn-primary');
+  btn.disabled = true;
+  btn.textContent = '⏳ Joining...';
+
   const size = parseInt(document.getElementById('party-size').value) || 2;
+  const phone = document.getElementById('phone-number').value.trim();
   const fd = new FormData();
   fd.append('restaurant_id', RID);
   fd.append('party_size', size);
   fd.append('client_token', CLIENT_TOKEN);
+  fd.append('phone_number', phone);
+
+  // Request notification permission BEFORE async fetch (preserves user gesture on iOS)
+  let preGranted = false;
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+  const isStandalone = window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches;
+  const hasPushApi = 'Notification' in window && 'serviceWorker' in navigator && 'PushManager' in window;
+
+  if (hasPushApi && Notification.permission === 'granted') {
+    preGranted = true;
+  } else if (hasPushApi && Notification.permission !== 'denied' && !(isIOS && !isStandalone)) {
+    // Only request permission now if we can (not iOS non-standalone)
+    try {
+      const result = await Notification.requestPermission();
+      preGranted = (result === 'granted');
+    } catch (e) {}
+  }
 
   const res = await fetch('/api/queue/join', { method: 'POST', body: fd });
   const data = await res.json();
+
+  btn.disabled = false;
+  btn.textContent = '🎫 Join Queue';
 
   if (data.error === 'already_in_queue') {
     fetch(`/api/queue/entry/${data.entry_id}`)
@@ -573,16 +656,77 @@ document.getElementById('join-form').addEventListener('submit', async (e) => {
 
   localStorage.setItem(`queueq_entry_${RID}`, data.entry_id);
   showStatus(data.ticket_number, data.entry_id);
-  await subscribePush(data.entry_id);
+
+  if (preGranted) {
+    await subscribePush(data.entry_id);
+  } else {
+    // Show push status UI immediately with appropriate message
+    updatePushStatusUI(
+      isIOS && !isStandalone ? '📲' : '🔕',
+      isIOS && !isStandalone ? 'Add to Home Screen for notifications' : 'Tap "Enable Notifications" below',
+      'inactive'
+    );
+  }
 });
 
 // ── Status display (after joining) ─────────────────────────────────────
+
+// ── Audio Alert (fallback when push not available) ─────────────────────
+
+let audioCtx = null;
+
+function playAlertSound() {
+  try {
+    if (!audioCtx) {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    // Generate a loud, attention-grabbing tone sequence
+    const freqs = [880, 660, 880, 660, 1047]; // A5, E5, A5, E5, C6
+    freqs.forEach((freq, i) => {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'square'; // loudest waveform
+      osc.frequency.value = freq;
+      gain.gain.value = 0.3;
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start(audioCtx.currentTime + i * 0.2);
+      osc.stop(audioCtx.currentTime + i * 0.2 + 0.15);
+    });
+    // Vibrate if available
+    if (navigator.vibrate) navigator.vibrate([300, 100, 300, 100, 500]);
+  } catch (e) { /* audio not supported */ }
+}
+
+function updatePushStatusUI(icon, text, status) {
+  const el = document.getElementById('push-status');
+  document.getElementById('push-icon').textContent = icon;
+  document.getElementById('push-text').textContent = text;
+  el.style.background = status === 'active' ? '#12291a' : status === 'error' ? '#290a0a' : '#161b22';
+  document.getElementById('push-retry-btn').style.display = status === 'inactive' ? 'block' : 'none';
+
+  // Show install/Homescreen guidance
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+  const hasPushManager = 'PushManager' in window;
+  if (isIOS && !hasPushManager) {
+    // iOS < 16.4 — no Web Push at all
+    document.getElementById('push-install-btn').style.display = 'none';
+    document.getElementById('push-retry-btn').style.display = 'none';
+    el.style.background = '#1a1a2e';
+    document.getElementById('push-icon').textContent = '🔊';
+    document.getElementById('push-text').textContent = 'Keep this page open — an alert will sound when your table is ready!';
+  } else {
+    document.getElementById('push-install-btn').style.display =
+      (isIOS && !window.navigator.standalone) ? 'block' : 'none';
+  }
+}
 
 function showStatus(ticket, entryId) {
   document.getElementById('join-card').style.display = 'none';
   document.getElementById('status-card').style.display = 'block';
   document.getElementById('ticket-display').textContent = '#' + ticket;
   currentEntryId = entryId;
+  updatePushStatusUI('⏳', 'Checking notification status...', 'checking');
   updatePosition();
 
   // Clear old listeners by cloning the button
@@ -629,11 +773,10 @@ async function updatePosition() {
       document.getElementById('position-display').style.color = '#3fb950';
       document.getElementById('leave-section').style.display = 'none';
 
-      // Show a big popup modal on first detection
+      // Show a big popup modal on first detection + play audio alert
       if (previousStatus !== 'called') {
         showReadyModal(data.ticket_number);
-        // Also vibrate if available
-        if (navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 400]);
+        playAlertSound();  // loud audio + vibration
       }
       previousStatus = 'called';
       return;

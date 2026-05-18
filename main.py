@@ -193,6 +193,7 @@ def init_db():
             review_confirmed INTEGER DEFAULT 0,
             called_at TEXT,
             seated_at TEXT,
+            phone_number TEXT DEFAULT NULL,
             push_subscription TEXT DEFAULT NULL,
             FOREIGN KEY (restaurant_id) REFERENCES restaurants(id)
         );
@@ -215,6 +216,11 @@ def render(template: str, **kwargs) -> str:
 
 
 # --- Web pages ---
+
+@app.get("/push-diagnostic", response_class=HTMLResponse)
+async def push_diagnostic():
+    return HTMLResponse(render("push-diagnostic.html"))
+
 
 @app.get("/", response_class=HTMLResponse)
 async def landing():
@@ -255,6 +261,16 @@ async def queue_manifest(restaurant_id: str):
         ]
     }
     return JSONResponse(manifest)
+
+
+@app.get("/sw.js")
+async def service_worker():
+    """Serve service worker from root so its scope covers the entire app."""
+    sw_path = STATIC_DIR / "sw.js"
+    if not sw_path.exists():
+        raise HTTPException(404)
+    return Response(content=sw_path.read_text(), media_type="text/javascript",
+                    headers={"Service-Worker-Allowed": "/"})
 
 
 @app.get("/status/{entry_id}", response_class=HTMLResponse)
@@ -332,7 +348,7 @@ async def reset_counter(restaurant_id: str = Form(...), passcode: str = Form("")
 
 
 @app.post("/api/queue/join")
-async def join_queue(restaurant_id: str = Form(...), party_size: int = Form(1), client_token: str = Form("")):
+async def join_queue(restaurant_id: str = Form(...), party_size: int = Form(1), client_token: str = Form(""), phone_number: str = Form("")):
     conn = get_db()
     rest = conn.execute("SELECT * FROM restaurants WHERE id = ?", (restaurant_id,)).fetchone()
     if not rest:
@@ -354,9 +370,9 @@ async def join_queue(restaurant_id: str = Form(...), party_size: int = Form(1), 
     conn.execute("UPDATE restaurants SET ticket_counter = ticket_counter + 1 WHERE id = ?", (restaurant_id,))
     ticket = conn.execute("SELECT ticket_counter FROM restaurants WHERE id = ?", (restaurant_id,)).fetchone()[0]
     conn.execute(
-        "INSERT INTO queue_entries (id, restaurant_id, ticket_number, party_size, status, created_at) "
-        "VALUES (?, ?, ?, ?, 'waiting', ?)",
-        (entry_id, restaurant_id, ticket, party_size, now),
+        "INSERT INTO queue_entries (id, restaurant_id, ticket_number, party_size, status, created_at, phone_number) "
+        "VALUES (?, ?, ?, ?, 'waiting', ?, ?)",
+        (entry_id, restaurant_id, ticket, party_size, now, phone_number or None),
     )
     conn.commit()
     conn.close()
@@ -444,6 +460,23 @@ async def seat_customer(entry_id: str = Form(...), restaurant_id: str = Form(...
     return JSONResponse({"status": "seated"})
 
 
+
+@app.get("/api/diag/push/{entry_id}")
+async def diag_push(entry_id: str):
+    """Diagnostic: check if a push subscription exists for an entry."""
+    conn = get_db()
+    entry = conn.execute("SELECT id, push_subscription FROM queue_entries WHERE id = ?", (entry_id,)).fetchone()
+    conn.close()
+    if not entry:
+        raise HTTPException(404, "Entry not found")
+    has_sub = entry["push_subscription"] is not None
+    return JSONResponse({
+        "entry_id": entry["id"],
+        "has_push_subscription": has_sub,
+        "sub_endpoint": json.loads(entry["push_subscription"]).get("endpoint", "?")[:60] if has_sub else None,
+    })
+
+
 @app.post("/api/push/subscribe")
 async def subscribe_push(entry_id: str = Form(...), subscription: str = Form(...)):
     """Store a Web Push subscription associated with a queue entry."""
@@ -515,7 +548,7 @@ async def mark_review_opened(entry_id: str = Form(...)):
 async def queue_status(restaurant_id: str):
     conn = get_db()
     waiting = conn.execute(
-        "SELECT id, ticket_number, party_size, review_opened, review_confirmed, "
+        "SELECT id, ticket_number, party_size, phone_number, review_opened, review_confirmed, "
         "strftime('%s','now') - strftime('%s', created_at) as wait_seconds "
         "FROM queue_entries WHERE restaurant_id = ? AND status = 'waiting' ORDER BY ticket_number ASC",
         (restaurant_id,),
