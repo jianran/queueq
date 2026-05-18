@@ -217,14 +217,10 @@ function poll() {
         const review = e.review_opened || e.review_confirmed
           ? `<span class="badge review">✅ Review</span>`
           : `<span class="badge noreview">📝 Review</span>`;
-        const phone = e.phone_number
-          ? `<a href="tel:${e.phone_number}" style="color:#3fb950;font-size:13px;text-decoration:none;margin-left:8px;">📞 ${e.phone_number}</a>`
-          : '';
         return `<div class="queue-item">
           <span class="ticket">#${e.ticket_number}</span>
           <span class="size">Party of ${e.party_size} · ${mins}m</span>
           ${review}
-          ${phone}
         </div>`;
       }).join('');
     })

@@ -193,7 +193,6 @@ def init_db():
             review_confirmed INTEGER DEFAULT 0,
             called_at TEXT,
             seated_at TEXT,
-            phone_number TEXT DEFAULT NULL,
             push_subscription TEXT DEFAULT NULL,
             FOREIGN KEY (restaurant_id) REFERENCES restaurants(id)
         );
@@ -348,7 +347,7 @@ async def reset_counter(restaurant_id: str = Form(...), passcode: str = Form("")
 
 
 @app.post("/api/queue/join")
-async def join_queue(restaurant_id: str = Form(...), party_size: int = Form(1), client_token: str = Form(""), phone_number: str = Form("")):
+async def join_queue(restaurant_id: str = Form(...), party_size: int = Form(1), client_token: str = Form("")):
     conn = get_db()
     rest = conn.execute("SELECT * FROM restaurants WHERE id = ?", (restaurant_id,)).fetchone()
     if not rest:
@@ -370,9 +369,9 @@ async def join_queue(restaurant_id: str = Form(...), party_size: int = Form(1), 
     conn.execute("UPDATE restaurants SET ticket_counter = ticket_counter + 1 WHERE id = ?", (restaurant_id,))
     ticket = conn.execute("SELECT ticket_counter FROM restaurants WHERE id = ?", (restaurant_id,)).fetchone()[0]
     conn.execute(
-        "INSERT INTO queue_entries (id, restaurant_id, ticket_number, party_size, status, created_at, phone_number) "
-        "VALUES (?, ?, ?, ?, 'waiting', ?, ?)",
-        (entry_id, restaurant_id, ticket, party_size, now, phone_number or None),
+        "INSERT INTO queue_entries (id, restaurant_id, ticket_number, party_size, status, created_at) "
+        "VALUES (?, ?, ?, ?, 'waiting', ?)",
+        (entry_id, restaurant_id, ticket, party_size, now),
     )
     conn.commit()
     conn.close()
@@ -548,7 +547,7 @@ async def mark_review_opened(entry_id: str = Form(...)):
 async def queue_status(restaurant_id: str):
     conn = get_db()
     waiting = conn.execute(
-        "SELECT id, ticket_number, party_size, phone_number, review_opened, review_confirmed, "
+        "SELECT id, ticket_number, party_size, review_opened, review_confirmed, "
         "strftime('%s','now') - strftime('%s', created_at) as wait_seconds "
         "FROM queue_entries WHERE restaurant_id = ? AND status = 'waiting' ORDER BY ticket_number ASC",
         (restaurant_id,),
