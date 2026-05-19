@@ -36,7 +36,7 @@ def _get_base_url():
     env_url = os.getenv("QUEUEQ_URL")
     if env_url:
         return env_url.rstrip("/")
-    return "https://1b482b05-e819-4ed8-b659-1d3fa0d5f106-00-rvafaujaazq9.pike.replit.dev"
+    return "https://02d244a5-e5c2-40a9-8b36-00c9d9574e84-00-2rqx4u0ujrpgl.pike.replit.dev"
 
 
 app = FastAPI(title="QueueQ")

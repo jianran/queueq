@@ -323,11 +323,26 @@ async function subscribePush() {
       throw new Error(`Invalid VAPID public key (${keyBytes.length} bytes)`);
     }
 
-    const existingSub = await reg.pushManager.getSubscription();
-    const sub = existingSub || await reg.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: keyBytes,
-    });
+    let sub;
+    try {
+      const existingSub = await reg.pushManager.getSubscription();
+      sub = existingSub || await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: keyBytes,
+      });
+    } catch (subErr) {
+      if (subErr.name === 'InvalidStateError' || subErr.name === 'NotAllowedError') {
+        console.warn('Push: clearing stale subscription and retrying', subErr.name);
+        const stale = await reg.pushManager.getSubscription();
+        if (stale) await stale.unsubscribe();
+        sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: keyBytes,
+        });
+      } else {
+        throw subErr;
+      }
+    }
     console.log('Push: subscribed, endpoint:', sub.endpoint?.substring(0, 60));
 
     const fd = new FormData();
@@ -347,7 +362,7 @@ async function subscribePush() {
     if (isIOS && !isStandalone) {
       updatePushStatusUI('📲', 'Add to Home Screen for notifications', 'inactive');
     } else {
-      updatePushStatusUI('❌', 'Notification setup failed: ' + e.message, 'error');
+      updatePushStatusUI('❌', `Notification setup failed: ${e.name}: ${e.message}`, 'error');
     }
   }
 }

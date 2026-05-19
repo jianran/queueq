@@ -530,11 +530,28 @@ async function subscribePush(entryId) {
       throw new Error(`Invalid VAPID public key (${keyBytes.length} bytes)`);
     }
 
-    const existingSub = await reg.pushManager.getSubscription();
-    const sub = existingSub || await reg.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: keyBytes,
-    });
+    let sub;
+    try {
+      const existingSub = await reg.pushManager.getSubscription();
+      sub = existingSub || await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: keyBytes,
+      });
+    } catch (subErr) {
+      // InvalidStateError = existing subscription was made with a different key.
+      // Unsubscribe and create a fresh one.
+      if (subErr.name === 'InvalidStateError' || subErr.name === 'NotAllowedError') {
+        console.warn('Push: clearing stale subscription and retrying', subErr.name);
+        const stale = await reg.pushManager.getSubscription();
+        if (stale) await stale.unsubscribe();
+        sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: keyBytes,
+        });
+      } else {
+        throw subErr;
+      }
+    }
     console.log('Push: subscribed, endpoint:', sub.endpoint?.substring(0, 60));
 
     const fd = new FormData();
@@ -552,11 +569,10 @@ async function subscribePush(entryId) {
     }
   } catch (e) {
     console.error('Push subscribe error:', e.name, e.message);
-    // On iOS, pushManager.subscribe() fails if not in standalone mode
     if (isIOS && !isStandalone) {
       updatePushStatusUI('📲', 'Add to Home Screen for notifications', 'inactive');
     } else {
-      updatePushStatusUI('❌', 'Notification setup failed: ' + e.message, 'error');
+      updatePushStatusUI('❌', `Notification setup failed: ${e.name}: ${e.message}`, 'error');
     }
   }
 }
@@ -705,11 +721,12 @@ function updatePushStatusUI(icon, text, status) {
   document.getElementById('push-icon').textContent = icon;
   document.getElementById('push-text').textContent = text;
   el.style.background = status === 'active' ? '#12291a' : status === 'error' ? '#290a0a' : '#161b22';
-  document.getElementById('push-retry-btn').style.display = (status === 'inactive' || status === 'error') ? 'block' : 'none';
-
   // Show install/Homescreen guidance
   const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+  const isStandaloneUI = window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches;
   const hasPushManager = 'PushManager' in window;
+  const iosNeedsPWA = isIOS && !isStandaloneUI && hasPushManager;
+
   if (isIOS && !hasPushManager) {
     // iOS < 16.4 — no Web Push at all
     document.getElementById('push-install-btn').style.display = 'none';
@@ -718,8 +735,11 @@ function updatePushStatusUI(icon, text, status) {
     document.getElementById('push-icon').textContent = '🔊';
     document.getElementById('push-text').textContent = 'Keep this page open — an alert will sound when your table is ready!';
   } else {
-    document.getElementById('push-install-btn').style.display =
-      (isIOS && !window.navigator.standalone) ? 'block' : 'none';
+    const showInstall = iosNeedsPWA;
+    document.getElementById('push-install-btn').style.display = showInstall ? 'block' : 'none';
+    // Only show retry btn when install btn isn't already the right action
+    document.getElementById('push-retry-btn').style.display =
+      (!showInstall && (status === 'inactive' || status === 'error')) ? 'block' : 'none';
   }
 }
 
