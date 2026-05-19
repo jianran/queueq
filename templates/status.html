@@ -91,6 +91,12 @@ h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
       <span id="push-icon">⏳</span>
       <span id="push-text">Checking notification status...</span>
     </div>
+    <button id="push-enable-btn" style="display:none;margin-top:10px;width:100%;padding:12px;border:none;border-radius:10px;background:#238636;color:#fff;font-size:14px;font-weight:700;cursor:pointer;" onclick="subscribePush()">
+      🔔 Enable Notifications
+    </button>
+    <div id="install-banner" style="display:none;margin-top:10px;padding:10px;border-radius:8px;background:#1a1a2e;font-size:12px;color:#8b949e;line-height:1.5;">
+      📲 <span id="install-steps">Add to Home Screen to get notified when your table is ready, even with the screen off.</span>
+    </div>
   </div>
 
   <!-- Leave queue button -->
@@ -153,35 +159,6 @@ async function poll() {
     const ticketNum = document.getElementById('ticket-num');
     const reviewSection = document.getElementById('review-section');
     const leaveBtn = document.getElementById('leave-btn');
-    const pushSection = document.getElementById('push-section');
-    const pushIcon = document.getElementById('push-icon');
-    const pushText = document.getElementById('push-text');
-    const pushStatus = document.getElementById('push-status');
-
-    // Show push diagnostics on every poll (reveals if notifications are active)
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-    const isStandalone = window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches;
-    const hasPush = 'Notification' in window && 'serviceWorker' in navigator && 'PushManager' in window;
-    if (hasPush) {
-      pushSection.style.display = 'block';
-      if (isIOS && !isStandalone) {
-        pushIcon.textContent = '📲';
-        pushText.textContent = 'Add to Home Screen for notifications';
-        pushStatus.style.background = '#1a1a2e';
-      } else if (Notification.permission === 'granted') {
-        pushIcon.textContent = '✅';
-        pushText.textContent = 'Notifications active 🔔';
-        pushStatus.style.background = '#12291a';
-      } else if (Notification.permission === 'denied') {
-        pushIcon.textContent = '🔕';
-        pushText.textContent = 'Notifications blocked — enable in Settings';
-        pushStatus.style.background = '#290a0a';
-      } else {
-        pushIcon.textContent = '⏳';
-        pushText.textContent = 'Notifications not yet enabled';
-        pushStatus.style.background = '#161b22';
-      }
-    }
 
     // Show leave button only when waiting or called
     leaveBtn.style.display = (data.status === 'waiting' || data.status === 'called') ? 'block' : 'none';
@@ -269,6 +246,138 @@ if ('serviceWorker' in navigator) {
       .catch(e => console.error('SW reg failed:', e));
   });
 }
+
+// ── Push subscription ──────────────────────────────────────────────────
+//
+// The owner-call endpoint only sends a push when this entry has a
+// `push_subscription` row stored on the server. The /queue page handles the
+// first subscribe at join time, but if the customer reloads or reopens the
+// status link in a fresh tab, that subscription may not exist for them yet.
+// So this page also runs the subscribe flow: silently re-uses an existing
+// subscription when permission is already granted, otherwise shows an
+// "Enable Notifications" button that the user can tap.
+
+function updatePushStatusUI(icon, text, state) {
+  const section = document.getElementById('push-section');
+  const status = document.getElementById('push-status');
+  const btn = document.getElementById('push-enable-btn');
+  const banner = document.getElementById('install-banner');
+  section.style.display = 'block';
+  document.getElementById('push-icon').textContent = icon;
+  document.getElementById('push-text').textContent = text;
+  status.style.background =
+    state === 'active' ? '#12291a' :
+    state === 'error'  ? '#290a0a' :
+    state === 'checking' ? '#161b22' : '#1a1a2e';
+  // Show "Enable" button only when something the user can do would help.
+  btn.style.display = (state === 'inactive' || state === 'error') ? 'block' : 'none';
+  // iOS install banner only when we're stuck because of standalone requirement.
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+  const isStandalone = window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches;
+  banner.style.display = (isIOS && !isStandalone) ? 'block' : 'none';
+  if (isIOS && !isStandalone) {
+    // On iOS Safari (non-PWA) the only path is Add-to-Home-Screen.
+    btn.style.display = 'none';
+  }
+}
+
+function urlBase64ToUint8Array(base64Url) {
+  const padding = '='.repeat((4 - base64Url.length % 4) % 4);
+  const base64 = (base64Url + padding).replace(/-/g, '+').replace(/_/g, '/');
+  return Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+}
+
+async function subscribePush() {
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+  const isStandalone = window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches;
+
+  if (!('Notification' in window && 'serviceWorker' in navigator && 'PushManager' in window)) {
+    updatePushStatusUI('🔊', 'Keep this page open — your browser will alert when ready.', 'inactive');
+    return;
+  }
+  if (isIOS && !isStandalone) {
+    updatePushStatusUI('📲', 'Add to Home Screen for notifications', 'inactive');
+    return;
+  }
+  if (Notification.permission === 'denied') {
+    updatePushStatusUI('🔕', 'Notifications blocked — enable in browser Settings', 'error');
+    return;
+  }
+
+  try {
+    if (Notification.permission !== 'granted') {
+      updatePushStatusUI('⏳', 'Requesting notification permission...', 'checking');
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') {
+        updatePushStatusUI('🔕', 'Notifications not allowed — tap "Enable Notifications" to try again', 'error');
+        return;
+      }
+    }
+
+    updatePushStatusUI('⏳', 'Setting up notifications...', 'checking');
+    const reg = await navigator.serviceWorker.ready;
+    const keyRes = await fetch('/api/vapid-public-key');
+    const keyData = await keyRes.json();
+    const keyBytes = urlBase64ToUint8Array(keyData.public_key);
+    if (keyBytes.length !== 65 || keyBytes[0] !== 4) {
+      throw new Error(`Invalid VAPID public key (${keyBytes.length} bytes)`);
+    }
+
+    const existingSub = await reg.pushManager.getSubscription();
+    const sub = existingSub || await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: keyBytes,
+    });
+    console.log('Push: subscribed, endpoint:', sub.endpoint?.substring(0, 60));
+
+    const fd = new FormData();
+    fd.append('entry_id', ENTRY_ID);
+    fd.append('subscription', JSON.stringify(sub.toJSON()));
+    const subRes = await fetch('/api/push/subscribe', { method: 'POST', body: fd });
+
+    if (subRes.ok) {
+      updatePushStatusUI('✅', 'Notifications active! 🔔', 'active');
+    } else {
+      const errBody = await subRes.text();
+      console.warn('Push subscribe API failed:', subRes.status, errBody);
+      updatePushStatusUI('❌', 'Failed to save notification subscription — tap to retry', 'error');
+    }
+  } catch (e) {
+    console.error('Push subscribe error:', e.name, e.message);
+    if (isIOS && !isStandalone) {
+      updatePushStatusUI('📲', 'Add to Home Screen for notifications', 'inactive');
+    } else {
+      updatePushStatusUI('❌', 'Notification setup failed: ' + e.message, 'error');
+    }
+  }
+}
+
+// Auto-attempt on page load. If permission is already granted we'll silently
+// re-store the subscription (handles reload / cross-device link cases).
+// If permission is "default", we still show the section with the Enable button
+// so the user has a clear way to opt in without re-joining the queue.
+window.addEventListener('load', () => {
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+  const isStandalone = window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches;
+  const hasPushApi = 'Notification' in window && 'serviceWorker' in navigator && 'PushManager' in window;
+
+  if (!hasPushApi) {
+    updatePushStatusUI('🔊', 'Keep this page open — your browser will alert when ready.', 'inactive');
+    return;
+  }
+  if (isIOS && !isStandalone) {
+    updatePushStatusUI('📲', 'Add to Home Screen for notifications', 'inactive');
+    return;
+  }
+  if (Notification.permission === 'granted') {
+    // Re-subscribe silently; this stores the sub on the server if it isn't already.
+    subscribePush();
+  } else if (Notification.permission === 'denied') {
+    updatePushStatusUI('🔕', 'Notifications blocked — enable in browser Settings', 'error');
+  } else {
+    updatePushStatusUI('🔔', 'Enable notifications so we can alert you when your table is ready', 'inactive');
+  }
+});
 
 // Log browser push capability for diagnostics
 console.log('Push diag:', {
