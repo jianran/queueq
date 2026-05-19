@@ -225,7 +225,7 @@ h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
       <span id="push-icon">⏳</span>
       <span id="push-text">Checking notification status...</span>
     </div>
-    <button id="push-retry-btn" style="display:none;width:100%;margin-top:6px;padding:10px;border:1px solid #30363d;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;background:#21262d;color:#8b949e;">
+    <button id="push-retry-btn" style="display:none;width:100%;margin-top:8px;padding:12px;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;background:#238636;color:#fff;">
       🔔 Enable Notifications
     </button>
     <button id="push-install-btn" style="display:none;width:100%;margin-top:6px;padding:10px;border:1px solid #30363d;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;background:#1a1a2e;color:#d4b48c;" onclick="showBookmarkModal()">
@@ -661,12 +661,13 @@ document.getElementById('join-form').addEventListener('submit', async (e) => {
   if (preGranted) {
     await subscribePush(data.entry_id);
   } else {
-    // Show push status UI immediately with appropriate message
-    updatePushStatusUI(
-      isIOS && !isStandalone ? '📲' : '🔕',
-      isIOS && !isStandalone ? 'Add to Home Screen for notifications' : 'Tap "Enable Notifications" below',
-      'inactive'
-    );
+    if (isIOS && !isStandalone) {
+      updatePushStatusUI('📲', 'Add to Home Screen for notifications', 'inactive');
+    } else if ('Notification' in window && Notification.permission === 'denied') {
+      updatePushStatusUI('🔕', 'Notifications blocked — enable in browser Settings', 'error');
+    } else {
+      updatePushStatusUI('🔔', 'Get notified when your table is ready — tap below!', 'inactive');
+    }
   }
 });
 
@@ -704,7 +705,7 @@ function updatePushStatusUI(icon, text, status) {
   document.getElementById('push-icon').textContent = icon;
   document.getElementById('push-text').textContent = text;
   el.style.background = status === 'active' ? '#12291a' : status === 'error' ? '#290a0a' : '#161b22';
-  document.getElementById('push-retry-btn').style.display = status === 'inactive' ? 'block' : 'none';
+  document.getElementById('push-retry-btn').style.display = (status === 'inactive' || status === 'error') ? 'block' : 'none';
 
   // Show install/Homescreen guidance
   const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
