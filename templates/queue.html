@@ -525,12 +525,13 @@ async function subscribePush(entryId) {
     const keyData = await keyRes.json();
     console.log('Push: got VAPID key, length:', keyData.public_key.length);
 
-    const keyBytes = Uint8Array.from(
-      atob(keyData.public_key.replace(/_/g, '/').replace(/-/g, '+')),
-      c => c.charCodeAt(0)
-    );
+    const keyBytes = urlBase64ToUint8Array(keyData.public_key);
+    if (keyBytes.length !== 65 || keyBytes[0] !== 4) {
+      throw new Error(`Invalid VAPID public key (${keyBytes.length} bytes)`);
+    }
 
-    const sub = await reg.pushManager.subscribe({
+    const existingSub = await reg.pushManager.getSubscription();
+    const sub = existingSub || await reg.pushManager.subscribe({
       userVisibleOnly: true,
       applicationServerKey: keyBytes,
     });
@@ -558,6 +559,12 @@ async function subscribePush(entryId) {
       updatePushStatusUI('❌', 'Notification setup failed: ' + e.message, 'error');
     }
   }
+}
+
+function urlBase64ToUint8Array(base64Url) {
+  const padding = '='.repeat((4 - base64Url.length % 4) % 4);
+  const base64 = (base64Url + padding).replace(/-/g, '+').replace(/_/g, '/');
+  return Uint8Array.from(atob(base64), c => c.charCodeAt(0));
 }
 
 // Register service worker with root scope for push notifications

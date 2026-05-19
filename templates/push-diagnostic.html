@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>QueueQ Push Test</title>
+<style>
+body { font-family: -apple-system, system-ui, sans-serif; background: #0d1117; color: #e6edf3; padding: 20px; max-width: 480px; margin: 0 auto; }
+h1 { font-size: 20px; margin-bottom: 4px; }
+h2 { font-size: 16px; color: #8b949e; margin: 16px 0 8px; }
+.sub { color: #8b949e; font-size: 12px; margin-bottom: 16px; }
+pre { background: #161b22; padding: 12px; border-radius: 8px; overflow-x: auto; font-size: 12px; white-space: pre-wrap; }
+.status { padding: 10px; border-radius: 8px; margin: 6px 0; font-size: 13px; line-height: 1.5; }
+.green { background: #12291a; color: #3fb950; }
+.red { background: #290a0a; color: #f85149; }
+.yellow { background: #1a1a2e; color: #d4b48c; }
+button { padding: 14px; border: none; border-radius: 10px; font-size: 15px; font-weight: 700; cursor: pointer; width: 100%; margin: 6px 0; }
+button:active { transform: scale(0.97); }
+.btn-green { background: #238636; color: #fff; }
+.btn-gray { background: #21262d; color: #e6edf3; }
+</style>
+</head>
+<body>
+<h1>📋 Push Test</h1>
+<p class="sub">Run each step below in order. Open this page from your <strong>Home Screen icon</strong>, not Safari.</p>
+
+<h2>Step 1: Capability Check</h2>
+<div id="cap-check"></div>
+
+<h2>Step 2: Notification Permission</h2>
+<button class="btn-green" id="perm-btn" onclick="requestPermission()">🔔 Request Notification Permission</button>
+<div id="perm-result"></div>
+
+<h2>Step 3: Register Service Worker</h2>
+<button class="btn-green" id="sw-btn" onclick="registerSW()">📦 Register Service Worker</button>
+<div id="sw-result"></div>
+
+<h2>Step 4: Subscribe to Push</h2>
+<button class="btn-green" id="sub-btn" onclick="subscribePushTest()">🔔 Subscribe to Push</button>
+<div id="sub-result"></div>
+
+<h2>Step 5: Send Test Push</h2>
+<button class="btn-gray" id="test-push-btn" onclick="sendTestPush()">📤 Send Test Push (call my entry)</button>
+<div id="test-result"></div>
+
+<script>
+// Step 1: Capabilities
+(function() {
+  const el = document.getElementById('cap-check');
+  const checks = [
+    ['Secure Context (HTTPS)', window.isSecureContext, 'Required for Push API'],
+    ['window.PushManager', typeof PushManager !== 'undefined', 'Global PushManager constructor'],
+    ['\'PushManager\' in window', 'PushManager' in window, 'Property check on window'],
+    ['navigator.serviceWorker', 'serviceWorker' in navigator, 'Service Worker API'],
+    ['window.Notification', 'Notification' in window, 'Notification API'],
+    ['navigator.standalone', !!navigator.standalone, 'iOS PWA mode (Home Screen)'],
+    ['matchMedia standalone', matchMedia('(display-mode: standalone)').matches, 'CSS display mode'],
+  ];
+  let html = checks.map(([label, ok, note]) => {
+    const icon = ok ? '✅' : '❌';
+    const cls = ok ? 'green' : 'red';
+    return `<div class="status ${cls}">${icon} <strong>${label}</strong><br><span style="font-size:11px">${note}: ${ok}</span></div>`;
+  }).join('');
+  el.innerHTML = html;
+})();
+
+// Step 2: Permission
+let permResult = 'default';
+async function requestPermission() {
+  const el = document.getElementById('perm-result');
+  const btn = document.getElementById('perm-btn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Requesting...';
+  try {
+    const result = await Notification.requestPermission();
+    permResult = result;
+    const icon = result === 'granted' ? '✅' : result === 'denied' ? '❌' : 'ℹ️';
+    const cls = result === 'granted' ? 'green' : 'red';
+    el.innerHTML = `<div class="status ${cls}">${icon} Permission: <strong>${result}</strong></div>`;
+    btn.textContent = result === 'granted' ? '✅ Granted' : '🔕 ' + result;
+  } catch (e) {
+    el.innerHTML = `<div class="status red">❌ Error: ${e.message}</div>`;
+    btn.textContent = '🔔 Retry';
+  }
+  btn.disabled = false;
+}
+
+// Step 3: SW
+async function registerSW() {
+  const el = document.getElementById('sw-result');
+  const btn = document.getElementById('sw-btn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Registering...';
+  try {
+    const reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+    await navigator.serviceWorker.ready;
+    el.innerHTML = `<div class="status green">✅ SW registered<br>Scope: ${reg.scope}<br>Active: ${!!reg.active}</div>`;
+    btn.textContent = '✅ Registered';
+  } catch (e) {
+    el.innerHTML = `<div class="status red">❌ Registration failed: ${e.message}</div>`;
+    btn.textContent = '🔄 Retry';
+  }
+  btn.disabled = false;
+}
+
+// Step 4: Subscribe to Push
+async function subscribePushTest() {
+  const el = document.getElementById('sub-result');
+  const btn = document.getElementById('sub-btn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Subscribing...';
+
+  try {
+    // Check SW registration
+    const reg = await navigator.serviceWorker.ready;
+    el.innerHTML = `<div class="status yellow">ℹ️ SW ready, scope: ${reg.scope}</div>`;
+
+    // Try PushManager
+    if (!reg.pushManager) {
+      el.innerHTML += `<div class="status red">❌ registration.pushManager is undefined</div>`;
+      btn.textContent = '❌ Not supported';
+      return;
+    }
+
+    // Get existing subscription
+    const existing = await reg.pushManager.getSubscription();
+    if (existing) {
+      el.innerHTML += `<div class="status green">✅ Already subscribed!<br>Endpoint: ${existing.endpoint.substring(0, 50)}...</div>`;
+      btn.textContent = '✅ Already subscribed';
+      return;
+    }
+
+    // Get VAPID key
+    const keyRes = await fetch('/api/vapid-public-key');
+    const keyData = await keyRes.json();
+    const keyBytes = urlBase64ToUint8Array(keyData.public_key);
+    el.innerHTML += `<div class="status yellow">ℹ️ VAPID key: ${keyData.public_key.substring(0, 30)}... (${keyBytes.length} bytes)</div>`;
+    if (keyBytes.length !== 65 || keyBytes[0] !== 4) {
+      throw new Error(`Invalid VAPID public key (${keyBytes.length} bytes)`);
+    }
+
+    // Subscribe
+    const sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: keyBytes,
+    });
+
+    el.innerHTML += `<div class="status green">✅ PUSH SUBSCRIBED! 🎉<br>Endpoint: ${sub.endpoint.substring(0, 50)}...</div>`;
+
+    // Save to server
+    const fd = new FormData();
+    fd.append('entry_id', 'pushdiag_' + Date.now());
+    fd.append('subscription', JSON.stringify(sub.toJSON()));
+    const saveRes = await fetch('/api/push/subscribe', { method: 'POST', body: fd });
+    if (saveRes.ok) {
+      el.innerHTML += `<div class="status green">✅ Subscription saved to server!</div>`;
+    }
+
+    btn.textContent = '✅ Subscribed!';
+  } catch (e) {
+    el.innerHTML += `<div class="status red">❌ Subscribe failed: ${e.name}: ${e.message}</div>`;
+    console.error('Push subscribe error:', e);
+    btn.textContent = '🔄 Retry';
+  }
+  btn.disabled = false;
+}
+
+function urlBase64ToUint8Array(base64Url) {
+  const padding = '='.repeat((4 - base64Url.length % 4) % 4);
+  const base64 = (base64Url + padding).replace(/-/g, '+').replace(/_/g, '/');
+  return Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+}
+
+// Step 5: Test push
+async function sendTestPush() {
+  // This is a placeholder — you'd need a real entry_id
+  alert('Test push needs a restaurant + entry. Use the admin page to call next.');
+}
+</script>
+</body>
+</html>

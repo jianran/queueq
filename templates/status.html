@@ -85,6 +85,14 @@ h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
     <span id="review-badge" class="badge badge-no">Not yet reviewed</span>
   </div>
 
+  <!-- Push status indicator -->
+  <div id="push-section" style="margin-top:16px;padding-top:12px;border-top:1px solid #21262d;display:none;">
+    <div id="push-status" style="display:flex;align-items:center;gap:8px;font-size:12px;padding:8px 10px;border-radius:8px;background:#161b22;">
+      <span id="push-icon">⏳</span>
+      <span id="push-text">Checking notification status...</span>
+    </div>
+  </div>
+
   <!-- Leave queue button -->
   <button class="btn" id="leave-btn" style="display:none;margin-top:16px;border:1px solid #f85149;color:#f85149;background:transparent;" onclick="showLeaveModal()">
     🚪 Leave Queue
@@ -145,6 +153,35 @@ async function poll() {
     const ticketNum = document.getElementById('ticket-num');
     const reviewSection = document.getElementById('review-section');
     const leaveBtn = document.getElementById('leave-btn');
+    const pushSection = document.getElementById('push-section');
+    const pushIcon = document.getElementById('push-icon');
+    const pushText = document.getElementById('push-text');
+    const pushStatus = document.getElementById('push-status');
+
+    // Show push diagnostics on every poll (reveals if notifications are active)
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+    const isStandalone = window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches;
+    const hasPush = 'Notification' in window && 'serviceWorker' in navigator && 'PushManager' in window;
+    if (hasPush) {
+      pushSection.style.display = 'block';
+      if (isIOS && !isStandalone) {
+        pushIcon.textContent = '📲';
+        pushText.textContent = 'Add to Home Screen for notifications';
+        pushStatus.style.background = '#1a1a2e';
+      } else if (Notification.permission === 'granted') {
+        pushIcon.textContent = '✅';
+        pushText.textContent = 'Notifications active 🔔';
+        pushStatus.style.background = '#12291a';
+      } else if (Notification.permission === 'denied') {
+        pushIcon.textContent = '🔕';
+        pushText.textContent = 'Notifications blocked — enable in Settings';
+        pushStatus.style.background = '#290a0a';
+      } else {
+        pushIcon.textContent = '⏳';
+        pushText.textContent = 'Notifications not yet enabled';
+        pushStatus.style.background = '#161b22';
+      }
+    }
 
     // Show leave button only when waiting or called
     leaveBtn.style.display = (data.status === 'waiting' || data.status === 'called') ? 'block' : 'none';
@@ -223,6 +260,23 @@ function showReadyModal(ticketNumber) {
 function closeReadyModal() {
   document.getElementById('ready-modal').classList.remove('show');
 }
+
+// Register service worker for push notifications
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js', { scope: '/' })
+      .then(reg => { console.log('SW registered, scope:', reg.scope); })
+      .catch(e => console.error('SW reg failed:', e));
+  });
+}
+
+// Log browser push capability for diagnostics
+console.log('Push diag:', {
+  isIOS: /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream,
+  isStandalone: window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches,
+  hasPush: 'Notification' in window && 'serviceWorker' in navigator && 'PushManager' in window,
+  permission: 'Notification' in window ? Notification.permission : 'N/A'
+});
 
 poll();
 pollTimer = setInterval(poll, 5000);

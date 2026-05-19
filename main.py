@@ -10,6 +10,7 @@ import sqlite3
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
+from base64 import urlsafe_b64decode, urlsafe_b64encode
 
 import io
 from fastapi import FastAPI, HTTPException, Form, File, UploadFile
@@ -56,6 +57,61 @@ VAPID_FILE = DATA_DIR / "vapid.json"
 VAPID_CLAIMS = None
 
 
+def _b64url_decode(value: str) -> bytes:
+    return urlsafe_b64decode(value + "=" * (-len(value) % 4))
+
+
+def _b64url_encode(value: bytes) -> str:
+    return urlsafe_b64encode(value).rstrip(b"=").decode()
+
+
+def _vapid_subject(base_url: str) -> str:
+    subject = os.getenv("QUEUEQ_VAPID_SUBJECT", "").strip()
+    if subject:
+        if "@" in subject and ":" not in subject:
+            return f"mailto:{subject}"
+        return subject
+    return base_url
+
+
+def _serialize_vapid_private_key(private_key) -> str:
+    from cryptography.hazmat.primitives import serialization
+
+    priv_der = private_key.private_bytes(
+        encoding=serialization.Encoding.DER,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption()
+    )
+    return _b64url_encode(priv_der)
+
+
+def _serialize_vapid_public_key(private_key) -> str:
+    from cryptography.hazmat.primitives import serialization
+
+    raw_public = private_key.public_key().public_bytes(
+        encoding=serialization.Encoding.X962,
+        format=serialization.PublicFormat.UncompressedPoint
+    )
+    return _b64url_encode(raw_public)
+
+
+def _load_vapid_private_key(data: dict):
+    from cryptography.hazmat.primitives import serialization
+
+    private_key = data.get("private_key", "")
+    if "-----BEGIN" in private_key:
+        return serialization.load_pem_private_key(private_key.encode(), password=None)
+    return serialization.load_der_private_key(_b64url_decode(private_key), password=None)
+
+
+def _needs_vapid_migration(data: dict) -> bool:
+    try:
+        public_bytes = _b64url_decode(data.get("public_key", ""))
+    except Exception:
+        return True
+    return len(public_bytes) != 65 or not public_bytes.startswith(b"\x04")
+
+
 def _ensure_vapid():
     """Load or generate VAPID keys on first run."""
     global VAPID_CLAIMS
@@ -64,30 +120,14 @@ def _ensure_vapid():
     if VAPID_FILE.exists():
         with open(VAPID_FILE) as f:
             data = json.load(f)
-        # Migrate old format (PEM private key + X962 public key) to new format
-        if "-----BEGIN" in data.get("private_key", ""):
-            logger.info("Migrating old VAPID key format")
-            from cryptography.hazmat.primitives import serialization
-            from base64 import urlsafe_b64encode
-            from py_vapid import Vapid
-            priv_pem = data["private_key"]
-            priv_key = serialization.load_pem_private_key(
-                priv_pem.encode(), password=None
-            )
-            priv_der = priv_key.private_bytes(
-                encoding=serialization.Encoding.DER,
-                format=serialization.PrivateFormat.PKCS8,
-                encryption_algorithm=serialization.NoEncryption()
-            )
-            priv_der_b64 = urlsafe_b64encode(priv_der).rstrip(b"=").decode()
-            spki_bytes = priv_key.public_key().public_bytes(
-                encoding=serialization.Encoding.DER,
-                format=serialization.PublicFormat.SubjectPublicKeyInfo
-            )
-            spki_b64 = urlsafe_b64encode(spki_bytes).rstrip(b"=").decode()
+        # Browser PushManager expects the VAPID public key as a raw X9.62
+        # uncompressed P-256 point. Older QueueQ builds stored SPKI DER here.
+        if "-----BEGIN" in data.get("private_key", "") or _needs_vapid_migration(data):
+            logger.info("Migrating VAPID keys to browser-compatible raw public key format")
+            priv_key = _load_vapid_private_key(data)
             data = {
-                "public_key": spki_b64,
-                "private_key": priv_der_b64,
+                "public_key": _serialize_vapid_public_key(priv_key),
+                "private_key": _serialize_vapid_private_key(priv_key),
             }
             VAPID_FILE.write_text(json.dumps(data, indent=2))
     else:
@@ -95,27 +135,12 @@ def _ensure_vapid():
             logger.warning("pywebpush not installed; push notifications disabled")
             VAPID_CLAIMS = None
             return None
-        from cryptography.hazmat.primitives import serialization
-        from base64 import urlsafe_b64encode
         from py_vapid import Vapid
         v = Vapid()
         v.generate_keys()
-        # pywebpush needs DER-encoded private key (base64url for from_string)
-        priv_der = v.private_key.private_bytes(
-            encoding=serialization.Encoding.DER,
-            format=serialization.PrivateFormat.PKCS8,
-            encryption_algorithm=serialization.NoEncryption()
-        )
-        priv_der_b64 = urlsafe_b64encode(priv_der).rstrip(b"=").decode()
-        # Safari/iOS needs SPKI-encoded public key (with algorithm ID)
-        spki_bytes = v.public_key.public_bytes(
-            encoding=serialization.Encoding.DER,
-            format=serialization.PublicFormat.SubjectPublicKeyInfo
-        )
-        spki_b64 = urlsafe_b64encode(spki_bytes).rstrip(b"=").decode()
         data = {
-            "public_key": spki_b64,
-            "private_key": priv_der_b64,
+            "public_key": _serialize_vapid_public_key(v.private_key),
+            "private_key": _serialize_vapid_private_key(v.private_key),
         }
         VAPID_FILE.write_text(json.dumps(data, indent=2))
         logger.info("Generated new VAPID keys → %s", VAPID_FILE)
@@ -124,7 +149,7 @@ def _ensure_vapid():
     VAPID_CLAIMS = {
         "vapid_public_key": data["public_key"],
         "vapid_private_key": data["private_key"],
-        "subscriber": f"mailto:{base_url}",
+        "subscriber": _vapid_subject(base_url),
     }
     return VAPID_CLAIMS
 
@@ -570,6 +595,7 @@ async def get_entry(entry_id: str):
         raise HTTPException(404)
     return JSONResponse({
         "entry_id": entry["id"],
+        "restaurant_id": entry["restaurant_id"],
         "ticket_number": entry["ticket_number"],
         "party_size": entry["party_size"],
         "status": entry["status"],
