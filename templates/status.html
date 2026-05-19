@@ -353,9 +353,14 @@ async function subscribePush() {
     if (subRes.ok) {
       updatePushStatusUI('✅', 'Notifications active! 🔔', 'active');
     } else {
+      const contentType = subRes.headers.get('content-type') || '';
       const errBody = await subRes.text();
-      console.warn('Push subscribe API failed:', subRes.status, errBody);
-      updatePushStatusUI('❌', 'Failed to save notification subscription — tap to retry', 'error');
+      console.warn('Push subscribe API failed:', subRes.status, errBody.slice(0, 200));
+      if (contentType.includes('text/html') || subRes.status === 404 && errBody.includes('<!')) {
+        updatePushStatusUI('⚠️', 'Server offline — tap Enable Notifications when ready', 'error');
+      } else {
+        updatePushStatusUI('❌', `Failed to save (${subRes.status}) — tap to retry`, 'error');
+      }
     }
   } catch (e) {
     console.error('Push subscribe error:', e.name, e.message);
