@@ -8,139 +8,254 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>{{ restaurant_name }} — QueueQ Status</title>
 <style>
-* { margin: 0; padding: 0; box-sizing: border-box; }
+:root {
+  --bg:       #09090b;
+  --surface:  #18181b;
+  --surface2: #27272a;
+  --border:   rgba(255,255,255,0.07);
+  --accent:   #f43f5e;
+  --accentlo: rgba(244,63,94,0.12);
+  --success:  #22c55e;
+  --successlo:#052e16;
+  --warn:     #f97316;
+  --danger:   #ef4444;
+  --text:     #fafafa;
+  --muted:    rgba(250,250,250,0.45);
+  --muted2:   rgba(250,250,250,0.15);
+  --muted3:   rgba(250,250,250,0.06);
+}
+* { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
 body {
   font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-  background: #0d1117; color: #e6edf3;
-  min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px;
+  background: var(--bg); color: var(--text);
+  min-height: 100dvh; display: flex; flex-direction: column;
+  align-items: center; padding: 28px 20px 40px;
 }
-.card {
-  background: #161b22; border: 1px solid #30363d; border-radius: 20px;
-  padding: 32px 24px; max-width: 400px; width: 100%; text-align: center;
-}
-h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
-.sub { color: #8b949e; font-size: 14px; margin-bottom: 16px; line-height: 1.5; }
-.ticket-big { font-size: 72px; font-weight: 800; color: #e74c3c; margin: 8px 0; }
-.position-text { font-size: 16px; margin-bottom: 12px; }
-.pulse { animation: pulse 2s infinite; }
-@keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
-.status-called { color: #3fb950; font-size: 18px; font-weight: 700; }
-.status-waiting { color: #f0883e; }
-.status-seated { color: #8b949e; }
+.page { width:100%; max-width:380px; display:flex; flex-direction:column; gap:16px; }
 
-.review-section {
-  background: #1a1a2e; border: 1px solid #30363d; border-radius: 12px;
-  padding: 16px; margin-top: 16px;
-}
-.review-section .badge { display: inline-block; padding: 4px 12px; border-radius: 6px; font-size: 13px; margin-top: 8px; }
-.badge-yes { background: #12291a; color: #3fb950; }
-.badge-no { background: #290a0a; color: #f85149; }
+/* ── Header ─────────────────────────────────────────── */
+.page-header { text-align:center; }
+.restaurant-label { font-size:13px; color:var(--muted); letter-spacing:0.3px; }
 
-/* ── Modal overlay ──────────────────────────────────────────────── */
+/* ── Ticket hero ─────────────────────────────────────── */
+.ticket-hero {
+  font-size:108px; font-weight:900; color:var(--accent);
+  line-height:0.9; letter-spacing:-6px; text-align:center;
+  margin:8px 0;
+  text-shadow: 0 0 60px rgba(244,63,94,0.25);
+}
+@keyframes pulse-glow {
+  0%,100% { text-shadow:0 0 60px rgba(244,63,94,0.25); }
+  50%      { text-shadow:0 0 100px rgba(244,63,94,0.55); }
+}
+.ticket-hero.pulsing { animation:pulse-glow 2s ease-in-out infinite; }
+
+/* ── Position badge ──────────────────────────────────── */
+.position-badge {
+  display:inline-flex; align-items:center; gap:6px;
+  padding:8px 16px; border-radius:100px;
+  font-size:14px; font-weight:600;
+  background:var(--surface); border:1px solid var(--border);
+  width:100%; justify-content:center;
+}
+.position-badge.next   { background:rgba(249,115,22,0.12); border-color:rgba(249,115,22,0.3); color:var(--warn); }
+.position-badge.called { background:rgba(34,197,94,0.1);   border-color:rgba(34,197,94,0.3);  color:var(--success); font-size:15px; font-weight:700; }
+.position-badge.default { color:var(--muted); }
+
+/* ── Party pill ──────────────────────────────────────── */
+.party-pill {
+  display:flex; align-items:center; justify-content:center; gap:6px;
+  font-size:13px; color:var(--muted);
+}
+
+/* ── Push section ────────────────────────────────────── */
+.push-row {
+  background:var(--surface); border:1px solid var(--border);
+  border-radius:14px; padding:12px 14px;
+}
+.push-row .push-inner  { display:flex; align-items:center; gap:10px; }
+.push-row .push-icon   { font-size:20px; flex-shrink:0; }
+.push-row .push-msg    { font-size:13px; color:var(--muted); flex:1; line-height:1.4; }
+.push-row.active  { background:var(--successlo); border-color:rgba(34,197,94,0.25); }
+.push-row.active  .push-msg { color:var(--success); }
+.push-row.error   { background:rgba(239,68,68,0.07); border-color:rgba(239,68,68,0.2); }
+.push-row.error   .push-msg { color:#fca5a5; }
+.push-row.offline { background:rgba(249,115,22,0.07); border-color:rgba(249,115,22,0.2); }
+.push-row.offline .push-msg { color:var(--warn); }
+.push-row .push-btn {
+  margin-top:10px; width:100%; padding:13px;
+  border:none; border-radius:12px;
+  background:var(--success); color:#fff;
+  font-size:14px; font-weight:700; cursor:pointer;
+  transition:opacity .15s;
+}
+.push-row .push-btn:active { opacity:.8; }
+.push-row .push-install-btn {
+  margin-top:8px; width:100%; padding:11px;
+  border:1px solid rgba(249,115,22,0.3); border-radius:12px;
+  background:transparent; color:var(--warn);
+  font-size:13px; font-weight:600; cursor:pointer;
+}
+.push-row .push-install-btn:active { background:rgba(249,115,22,0.1); }
+
+/* ── Review offer ────────────────────────────────────── */
+.review-block {
+  background:linear-gradient(135deg,#1a1a2e,#16213e);
+  border:1px solid rgba(99,102,241,0.2);
+  border-radius:14px; padding:14px;
+}
+.review-block p { font-size:14px; color:#e0e7ff; line-height:1.4; margin-bottom:10px; }
+.review-done { font-size:13px; color:var(--success); font-weight:600; display:none; }
+
+/* ── Buttons ─────────────────────────────────────────── */
+.btn-secondary {
+  width:100%; padding:16px; border:1px solid var(--border); border-radius:16px;
+  background:var(--surface); color:var(--text);
+  font-size:15px; font-weight:600; cursor:pointer; transition:opacity .15s;
+}
+.btn-secondary:active { opacity:.8; }
+
+.btn-ghost {
+  width:100%; padding:14px; border:none; border-radius:16px;
+  background:transparent; color:var(--danger);
+  font-size:15px; font-weight:600; cursor:pointer; transition:background .15s;
+}
+.btn-ghost:active { background:rgba(239,68,68,0.1); }
+
+/* ── Modal ───────────────────────────────────────────── */
 .modal-overlay {
-  display: none; position: fixed; inset: 0;
-  background: rgba(0,0,0,0.75);
-  align-items: center; justify-content: center;
-  padding: 20px; z-index: 1000;
+  display:none; position:fixed; inset:0;
+  background:rgba(0,0,0,0.8); backdrop-filter:blur(4px);
+  align-items:flex-end; justify-content:center;
+  padding:20px; z-index:1000;
 }
-.modal-overlay.show { display: flex; }
+.modal-overlay.show { display:flex; }
 .modal-card {
-  background: #161b22; border: 1px solid #30363d;
-  border-radius: 20px; padding: 28px 24px;
-  max-width: 380px; width: 100%; text-align: center;
-  animation: modal-in .25s ease-out;
+  background:#18181b; border:1px solid var(--border);
+  border-radius:24px; padding:28px 24px;
+  max-width:380px; width:100%; text-align:center;
+  animation:modal-up .3s cubic-bezier(.34,1.3,.64,1);
 }
-@keyframes modal-in {
-  from { opacity: 0; transform: scale(0.92); }
-  to { opacity: 1; transform: scale(1); }
+@keyframes modal-up {
+  from { opacity:0; transform:translateY(40px) scale(0.95); }
+  to   { opacity:1; transform:translateY(0)     scale(1); }
 }
-.modal-card .modal-icon { font-size: 48px; margin-bottom: 12px; }
-.modal-card h2 { font-size: 22px; font-weight: 800; margin-bottom: 8px; }
-.modal-card p { color: #8b949e; font-size: 14px; line-height: 1.6; margin-bottom: 20px; }
-.modal-card .btn {
-  width: 100%; padding: 14px; border: none; border-radius: 12px;
-  font-size: 16px; font-weight: 700; cursor: pointer; transition: all .15s;
+.modal-icon { font-size:52px; margin-bottom:12px; }
+.modal-card h2 { font-size:22px; font-weight:800; margin-bottom:8px; letter-spacing:-0.3px; }
+.modal-card p  { color:var(--muted); font-size:14px; line-height:1.6; margin-bottom:20px; }
+.modal-actions { display:flex; flex-direction:column; gap:8px; }
+.modal-actions button {
+  width:100%; padding:15px; border-radius:14px;
+  font-size:15px; font-weight:700; cursor:pointer; border:none;
 }
-.modal-card .btn:active { transform: scale(0.97); }
-.btn-success { background: #238636; color: #fff; }
+.btn-danger-solid  { background:var(--danger); color:#fff; }
+.btn-success-solid { background:var(--success); color:#fff; }
+.btn-neutral { background:var(--surface2); color:var(--text); }
 
-/* ── Ready modal special ────────────────────────────────────────── */
-.ready-modal .modal-icon { animation: bounce 1s infinite; }
-@keyframes bounce {
-  0%,100% { transform: translateY(0); }
-  50% { transform: translateY(-8px); }
+/* ready modal */
+.ready-modal .modal-icon { animation:bounce .9s ease-in-out infinite; }
+@keyframes bounce { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-10px)} }
+.ready-ticket { font-size:72px; font-weight:900; color:var(--success); letter-spacing:-3px; margin:6px 0; }
+
+/* install steps */
+.steps-box {
+  background:var(--muted3); border-radius:12px; padding:14px;
+  margin-bottom:14px; text-align:left;
 }
+.step-row { display:flex; align-items:center; gap:10px; margin-bottom:10px; font-size:14px; line-height:1.4; }
+.step-row:last-child { margin-bottom:0; }
+.step-num {
+  background:var(--success); color:#fff; border-radius:50%;
+  width:24px; height:24px; flex-shrink:0;
+  display:flex; align-items:center; justify-content:center;
+  font-size:12px; font-weight:800;
+}
+.steps-done { margin-top:10px; color:var(--success); font-size:13px; text-align:center; font-weight:600; }
 </style>
 </head>
 <body>
-<div class="card">
-  <h1>{{ restaurant_name }}</h1>
-  <p class="sub" id="entry-sub">Queue Ticket</p>
-  <div class="ticket-big" id="ticket-num">#{{ ticket_number }}</div>
-  <p class="position-text" id="status-msg">Loading...</p>
-  <p class="sub" id="party-info">Party of {{ party_size }}</p>
+<div class="page">
 
-  <div class="review-section" id="review-section" style="display:none;">
-    <p>🍜 <strong>Review for a free dish!</strong></p>
-    <span id="review-badge" class="badge badge-no">Not yet reviewed</span>
+  <!-- Ticket hero -->
+  <div class="page-header">
+    <p class="restaurant-label">{{ restaurant_name }}</p>
+    <div class="ticket-hero pulsing" id="ticket-num">#{{ ticket_number }}</div>
+    <div class="position-badge default" id="position-badge">Loading…</div>
   </div>
 
-  <!-- Push status indicator -->
-  <div id="push-section" style="margin-top:16px;padding-top:12px;border-top:1px solid #21262d;">
-    <div id="push-status" style="display:flex;align-items:center;gap:8px;font-size:12px;padding:8px 10px;border-radius:8px;background:#161b22;">
-      <span id="push-icon">⏳</span>
-      <span id="push-text">Checking notification status...</span>
+  <!-- Party info -->
+  <div class="party-pill">👥 Party of {{ party_size }}</div>
+
+  <!-- Push notifications -->
+  <div class="push-row" id="push-section">
+    <div class="push-inner">
+      <span class="push-icon" id="push-icon">⏳</span>
+      <span class="push-msg"  id="push-text">Checking notification status…</span>
     </div>
-    <button id="push-enable-btn" style="display:none;margin-top:10px;width:100%;padding:12px;border:none;border-radius:10px;background:#238636;color:#fff;font-size:14px;font-weight:700;cursor:pointer;" onclick="subscribePush()">
-      🔔 Enable Notifications
-    </button>
-    <div id="install-banner" style="display:none;margin-top:10px;padding:10px;border-radius:8px;background:#1a1a2e;font-size:12px;color:#8b949e;line-height:1.5;">
-      📲 <span id="install-steps">Add to Home Screen to get notified when your table is ready, even with the screen off.</span>
-    </div>
+    <button class="push-btn"         id="push-enable-btn"  style="display:none;" onclick="subscribePush()">🔔 Enable Notifications</button>
+    <button class="push-install-btn" id="push-install-btn" style="display:none;" onclick="showInstallModal()">📲 Add to Home Screen for Notifications</button>
   </div>
 
-  <!-- Leave queue button -->
-  <button class="btn" id="leave-btn" style="display:none;margin-top:16px;border:1px solid #f85149;color:#f85149;background:transparent;" onclick="showLeaveModal()">
-    🚪 Leave Queue
-  </button>
+  <!-- Review offer -->
+  <div class="review-block" id="review-section" style="display:none;">
+    <p>🍜 <strong>Enjoying it so far?</strong> Leave a Google review and claim a free dish when seated!</p>
+    <button class="btn-secondary" id="review-btn" onclick="openReview()">⭐ Leave a Review</button>
+    <div class="review-done" id="review-done">✅ Thanks! Show this screen to your server.</div>
+  </div>
+
+  <!-- Leave queue -->
+  <button class="btn-ghost" id="leave-btn" style="display:none;" onclick="showLeaveModal()">Leave Queue</button>
+
 </div>
 
-<!-- ════════════════════════════════════════════════════════ -->
-<!-- LEAVE QUEUE MODAL -->
-<!-- ════════════════════════════════════════════════════════ -->
+<!-- ═══════════════════════════ MODALS ═════════════════════════════════════ -->
 
+<!-- Leave confirmation -->
 <div class="modal-overlay" id="leave-modal">
   <div class="modal-card">
     <div class="modal-icon">🚪</div>
-    <h2>Leave the Queue?</h2>
-    <p>
-      You'll lose your spot. If you change your mind, scan the QR again.
-    </p>
+    <h2>Leave the queue?</h2>
+    <p>You'll lose your spot. Scan the QR code to rejoin.</p>
     <div class="modal-actions">
-      <button class="btn" style="background:#f85149;color:#fff;width:100%;padding:14px;border:none;border-radius:12px;font-size:16px;font-weight:700;cursor:pointer;" onclick="confirmLeave()">
-        Yes, Leave Queue
-      </button>
-      <button class="btn" style="background:#21262d;color:#8b949e;width:100%;padding:14px;border:none;border-radius:12px;font-size:16px;font-weight:700;cursor:pointer;margin-top:8px;" onclick="closeLeaveModal()">
-        Stay in Queue
-      </button>
+      <button class="btn-danger-solid" onclick="confirmLeave()">Yes, leave</button>
+      <button class="btn-neutral" onclick="closeLeaveModal()">Stay in queue</button>
     </div>
   </div>
 </div>
 
-<!-- ════════════════════════════════════════════════════════ -->
-<!-- TABLE-READY MODAL -->
-<!-- ════════════════════════════════════════════════════════ -->
-
+<!-- Table ready -->
 <div class="modal-overlay ready-modal" id="ready-modal">
   <div class="modal-card">
     <div class="modal-icon">🪑</div>
-    <h2 style="color:#3fb950;">Table Ready!</h2>
-    <div class="ticket-big" style="font-size:56px;margin:4px 0;" id="ready-ticket">#{{ ticket_number }}</div>
-    <p>Your table at {{ restaurant_name }} is ready!<br>Please go to the counter now.</p>
+    <h2 style="color:var(--success);">Table Ready!</h2>
+    <div class="ready-ticket" id="ready-ticket">#{{ ticket_number }}</div>
+    <p>Your table at {{ restaurant_name }} is ready.<br>Please head to the counter now.</p>
     <div class="modal-actions">
-      <button class="btn btn-success" onclick="closeReadyModal()">
-        ✅ Got it, I'm going!
-      </button>
+      <button class="btn-success-solid" onclick="closeReadyModal()">✅ On my way!</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add to Home Screen instructions -->
+<div class="modal-overlay" id="install-modal">
+  <div class="modal-card">
+    <div class="modal-icon">📲</div>
+    <h2>Add to Home Screen</h2>
+    <p>Get notified when your table is ready — even when your phone is locked.</p>
+    <div class="steps-box" id="install-steps-ios" style="display:none;">
+      <div class="step-row"><span class="step-num">1</span><span>Tap the <strong>Share</strong> button ⎔ at the bottom of Safari</span></div>
+      <div class="step-row"><span class="step-num">2</span><span>Scroll and tap <strong>"Add to Home Screen"</strong></span></div>
+      <div class="step-row"><span class="step-num">3</span><span>Tap <strong>"Add"</strong> in the top right</span></div>
+      <p class="steps-done">🎉 Done! Push notifications are now enabled.</p>
+    </div>
+    <div class="steps-box" id="install-steps-android" style="display:none;">
+      <div class="step-row"><span class="step-num">1</span><span>Tap the <strong>menu</strong> ⋮ button (top right of Chrome)</span></div>
+      <div class="step-row"><span class="step-num">2</span><span>Tap <strong>"Add to Home Screen"</strong></span></div>
+      <div class="step-row"><span class="step-num">3</span><span>Tap <strong>"Add"</strong></span></div>
+      <p class="steps-done">🎉 Done! You'll get notifications now.</p>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-success-solid" onclick="closeInstallModal()">Got it!</button>
     </div>
   </div>
 </div>
@@ -150,135 +265,149 @@ const ENTRY_ID = '{{ entry_id }}';
 let pollTimer = null;
 let previousStatus = null;
 
+// ── Leave Queue ───────────────────────────────────────────────────────────────
+
+function showLeaveModal()  { document.getElementById('leave-modal').classList.add('show'); }
+function closeLeaveModal() { document.getElementById('leave-modal').classList.remove('show'); }
+
+async function confirmLeave() {
+  const fd = new FormData();
+  fd.append('entry_id', ENTRY_ID);
+  try { await fetch('/api/queue/leave', { method:'POST', body:fd }); } catch(e) {}
+  closeLeaveModal();
+  document.getElementById('leave-btn').style.display = 'none';
+  const ticketEl = document.getElementById('ticket-num');
+  ticketEl.style.color = 'var(--muted2)';
+  ticketEl.classList.remove('pulsing');
+  const badge = document.getElementById('position-badge');
+  badge.className = 'position-badge default';
+  badge.textContent = '🚪 You left the queue.';
+  if (pollTimer) clearInterval(pollTimer);
+}
+
+// ── Table Ready Modal ─────────────────────────────────────────────────────────
+
+function showReadyModal(ticketNumber) {
+  document.getElementById('ready-ticket').textContent = '#' + ticketNumber;
+  document.getElementById('ready-modal').classList.add('show');
+}
+function closeReadyModal() { document.getElementById('ready-modal').classList.remove('show'); }
+
+// ── Install Modal ─────────────────────────────────────────────────────────────
+
+function showInstallModal() {
+  const isIOS     = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+  const isAndroid = /Android/i.test(navigator.userAgent);
+  document.getElementById('install-steps-ios').style.display     = isIOS     ? 'block' : 'none';
+  document.getElementById('install-steps-android').style.display = isAndroid ? 'block' : 'none';
+  document.getElementById('install-modal').classList.add('show');
+}
+function closeInstallModal() { document.getElementById('install-modal').classList.remove('show'); }
+
+// ── Review ────────────────────────────────────────────────────────────────────
+
+async function openReview() {
+  const fd = new FormData();
+  fd.append('entry_id', ENTRY_ID);
+  await fetch('/api/queue/review-opened', { method:'POST', body:fd });
+  const name = encodeURIComponent('{{ restaurant_name }}');
+  window.open('https://www.google.com/maps/search/' + name + '/?hl=en', '_blank');
+  document.getElementById('review-done').style.display = 'block';
+  document.getElementById('review-btn').style.display = 'none';
+}
+
+// ── Poll ──────────────────────────────────────────────────────────────────────
+
 async function poll() {
   try {
-    const res = await fetch(`/api/queue/entry/${ENTRY_ID}`);
+    const res  = await fetch(`/api/queue/entry/${ENTRY_ID}`);
     const data = await res.json();
-
-    const statusMsg = document.getElementById('status-msg');
-    const ticketNum = document.getElementById('ticket-num');
-    const reviewSection = document.getElementById('review-section');
+    const badge    = document.getElementById('position-badge');
     const leaveBtn = document.getElementById('leave-btn');
+    const ticketEl = document.getElementById('ticket-num');
 
-    // Show leave button only when waiting or called
     leaveBtn.style.display = (data.status === 'waiting' || data.status === 'called') ? 'block' : 'none';
 
     if (data.status === 'called') {
-      statusMsg.className = 'position-text status-called';
-      statusMsg.textContent = '🔔 TABLE IS READY! Please go to the counter.';
+      badge.className = 'position-badge called';
+      badge.textContent = '🪑 Table ready — please head over now!';
+      ticketEl.classList.remove('pulsing');
+      ticketEl.style.color = 'var(--success)';
+      leaveBtn.style.display = 'none';
       if (previousStatus !== 'called') {
         showReadyModal(data.ticket_number);
         if (navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 400]);
       }
     } else if (data.status === 'seated') {
-      statusMsg.className = 'position-text status-seated';
-      statusMsg.textContent = '✅ Enjoy your meal! 🎉';
-      ticketNum.style.color = '#3fb950';
+      badge.className = 'position-badge called';
+      badge.textContent = '✅ Enjoy your meal! 🎉';
+      ticketEl.style.color = 'var(--success)';
+      ticketEl.classList.remove('pulsing');
       leaveBtn.style.display = 'none';
       if (pollTimer) clearInterval(pollTimer);
     } else if (data.status === 'waiting') {
-      statusMsg.className = 'position-text status-waiting';
-      const qRes = await fetch(`/api/queue/${data.restaurant_id}/status`);
+      const qRes  = await fetch(`/api/queue/${data.restaurant_id}/status`);
       const queue = await qRes.json();
       const ahead = (queue.waiting || []).filter(e => e.ticket_number < data.ticket_number).length;
-      statusMsg.textContent = ahead <= 0
-        ? "🔔 You're NEXT! Almost ready!"
-        : ahead + ' party(ies) ahead of you';
+      if (ahead <= 0) {
+        badge.className = 'position-badge next';
+        badge.textContent = "🔔 You're next — almost ready!";
+      } else {
+        badge.className = 'position-badge default';
+        badge.textContent = ahead + (ahead === 1 ? ' party' : ' parties') + ' ahead';
+      }
     } else {
-      statusMsg.className = 'position-text';
-      statusMsg.textContent = 'Status: ' + data.status;
+      badge.className = 'position-badge default';
+      badge.textContent = data.status;
     }
 
     previousStatus = data.status;
 
     // Review section
     if (data.review_opened || data.review_confirmed) {
-      reviewSection.style.display = 'block';
-      document.getElementById('review-badge').className = 'badge badge-yes';
-      document.getElementById('review-badge').textContent = '✅ Thanks for reviewing!';
+      document.getElementById('review-section').style.display = 'block';
+      document.getElementById('review-done').style.display = 'block';
+      document.getElementById('review-btn').style.display = 'none';
     } else {
-      reviewSection.style.display = 'block';
-      document.getElementById('review-badge').className = 'badge badge-no';
-      document.getElementById('review-badge').textContent = '📝 Leave a Google review for a free dish!';
+      document.getElementById('review-section').style.display = 'block';
     }
   } catch (e) {}
 }
 
-// ── Leave Queue ───────────────────────────────────────────────────────
+// ── Service Worker ────────────────────────────────────────────────────────────
 
-function showLeaveModal() {
-  document.getElementById('leave-modal').classList.add('show');
-}
-function closeLeaveModal() {
-  document.getElementById('leave-modal').classList.remove('show');
-}
-
-async function confirmLeave() {
-  const fd = new FormData();
-  fd.append('entry_id', ENTRY_ID);
-  try {
-    await fetch('/api/queue/leave', { method: 'POST', body: fd });
-  } catch (e) {}
-  closeLeaveModal();
-  document.getElementById('leave-btn').style.display = 'none';
-  document.getElementById('ticket-num').style.color = '#8b949e';
-  document.getElementById('status-msg').textContent = '🚪 You left the queue.';
-  document.getElementById('status-msg').style.color = '#8b949e';
-  if (pollTimer) clearInterval(pollTimer);
-}
-
-// ── Table-Ready Modal ───────────────────────────────────────────────────
-
-function showReadyModal(ticketNumber) {
-  document.getElementById('ready-ticket').textContent = '#' + ticketNumber;
-  document.getElementById('ready-modal').classList.add('show');
-}
-
-function closeReadyModal() {
-  document.getElementById('ready-modal').classList.remove('show');
-}
-
-// Register service worker for push notifications
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js', { scope: '/' })
-      .then(reg => { console.log('SW registered, scope:', reg.scope); })
-      .catch(e => console.error('SW reg failed:', e));
+    navigator.serviceWorker.register('/sw.js', { scope:'/' })
+      .then(r => console.log('SW scope:', r.scope))
+      .catch(e => console.error('SW failed:', e));
   });
 }
 
-// ── Push subscription ──────────────────────────────────────────────────
-//
-// The owner-call endpoint only sends a push when this entry has a
-// `push_subscription` row stored on the server. The /queue page handles the
-// first subscribe at join time, but if the customer reloads or reopens the
-// status link in a fresh tab, that subscription may not exist for them yet.
-// So this page also runs the subscribe flow: silently re-uses an existing
-// subscription when permission is already granted, otherwise shows an
-// "Enable Notifications" button that the user can tap.
+// ── Push notifications ────────────────────────────────────────────────────────
 
 function updatePushStatusUI(icon, text, state) {
-  const section = document.getElementById('push-section');
-  const status = document.getElementById('push-status');
-  const btn = document.getElementById('push-enable-btn');
-  const banner = document.getElementById('install-banner');
-  section.style.display = 'block';
   document.getElementById('push-icon').textContent = icon;
   document.getElementById('push-text').textContent = text;
-  status.style.background =
-    state === 'active' ? '#12291a' :
-    state === 'error'  ? '#290a0a' :
-    state === 'checking' ? '#161b22' : '#1a1a2e';
-  // Show "Enable" button only when something the user can do would help.
-  btn.style.display = (state === 'inactive' || state === 'error') ? 'block' : 'none';
-  // iOS install banner only when we're stuck because of standalone requirement.
-  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-  const isStandalone = window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches;
-  banner.style.display = (isIOS && !isStandalone) ? 'block' : 'none';
-  if (isIOS && !isStandalone) {
-    // On iOS Safari (non-PWA) the only path is Add-to-Home-Screen.
-    btn.style.display = 'none';
+
+  const row = document.getElementById('push-section');
+  row.className = 'push-row ' + (state === 'active' ? 'active' : state === 'error' ? 'error' : state === 'offline' ? 'offline' : '');
+
+  const isIOS        = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+  const isStandalone = window.navigator.standalone || window.matchMedia('(display-mode:standalone)').matches;
+  const hasPM        = 'PushManager' in window;
+  const iosNeedsPWA  = isIOS && !isStandalone && hasPM;
+
+  if (isIOS && !hasPM) {
+    document.getElementById('push-enable-btn').style.display  = 'none';
+    document.getElementById('push-install-btn').style.display = 'none';
+    document.getElementById('push-icon').textContent = '🔊';
+    document.getElementById('push-text').textContent = 'Keep this page open — a sound will play when your table is ready.';
+    return;
   }
+  document.getElementById('push-install-btn').style.display = iosNeedsPWA ? 'block' : 'none';
+  document.getElementById('push-enable-btn').style.display  =
+    (!iosNeedsPWA && (state === 'inactive' || state === 'error' || state === 'offline')) ? 'block' : 'none';
 }
 
 function urlBase64ToUint8Array(base64Url) {
@@ -288,98 +417,83 @@ function urlBase64ToUint8Array(base64Url) {
 }
 
 async function subscribePush() {
-  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-  const isStandalone = window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches;
+  const isIOS        = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+  const isStandalone = window.navigator.standalone || window.matchMedia('(display-mode:standalone)').matches;
 
   if (!('Notification' in window && 'serviceWorker' in navigator && 'PushManager' in window)) {
-    updatePushStatusUI('🔊', 'Keep this page open — your browser will alert when ready.', 'inactive');
+    updatePushStatusUI('🔊', "Keep this page open — we'll alert you when your table is ready.", 'inactive');
     return;
   }
   if (isIOS && !isStandalone) {
-    updatePushStatusUI('📲', 'Add to Home Screen for notifications', 'inactive');
+    updatePushStatusUI('📲', 'Add to Home Screen to get notified', 'inactive');
     return;
   }
   if (Notification.permission === 'denied') {
-    updatePushStatusUI('🔕', 'Notifications blocked — enable in browser Settings', 'error');
+    updatePushStatusUI('🔕', 'Notifications blocked — enable in Settings', 'error');
     return;
   }
 
   try {
     if (Notification.permission !== 'granted') {
-      updatePushStatusUI('⏳', 'Requesting notification permission...', 'checking');
+      updatePushStatusUI('⏳', 'Requesting permission…', 'checking');
       const permission = await Notification.requestPermission();
       if (permission !== 'granted') {
-        updatePushStatusUI('🔕', 'Notifications not allowed — tap "Enable Notifications" to try again', 'error');
+        updatePushStatusUI('🔕', 'Notifications not allowed — tap to try again', 'error');
         return;
       }
     }
 
-    updatePushStatusUI('⏳', 'Setting up notifications...', 'checking');
+    updatePushStatusUI('⏳', 'Setting up notifications…', 'checking');
     const reg = await navigator.serviceWorker.ready;
     const keyRes = await fetch('/api/vapid-public-key');
     const keyData = await keyRes.json();
     const keyBytes = urlBase64ToUint8Array(keyData.public_key);
-    if (keyBytes.length !== 65 || keyBytes[0] !== 4) {
-      throw new Error(`Invalid VAPID public key (${keyBytes.length} bytes)`);
-    }
+    if (keyBytes.length !== 65 || keyBytes[0] !== 4) throw new Error(`Bad VAPID key (${keyBytes.length}b)`);
 
     let sub;
     try {
-      const existingSub = await reg.pushManager.getSubscription();
-      sub = existingSub || await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: keyBytes,
-      });
+      const existing = await reg.pushManager.getSubscription();
+      sub = existing || await reg.pushManager.subscribe({ userVisibleOnly:true, applicationServerKey:keyBytes });
     } catch (subErr) {
       if (subErr.name === 'InvalidStateError' || subErr.name === 'NotAllowedError') {
-        console.warn('Push: clearing stale subscription and retrying', subErr.name);
+        console.warn('Push: clearing stale sub', subErr.name);
         const stale = await reg.pushManager.getSubscription();
         if (stale) await stale.unsubscribe();
-        sub = await reg.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: keyBytes,
-        });
-      } else {
-        throw subErr;
-      }
+        sub = await reg.pushManager.subscribe({ userVisibleOnly:true, applicationServerKey:keyBytes });
+      } else { throw subErr; }
     }
-    console.log('Push: subscribed, endpoint:', sub.endpoint?.substring(0, 60));
 
     const fd = new FormData();
     fd.append('entry_id', ENTRY_ID);
     fd.append('subscription', JSON.stringify(sub.toJSON()));
-    const subRes = await fetch('/api/push/subscribe', { method: 'POST', body: fd });
+    const subRes = await fetch('/api/push/subscribe', { method:'POST', body:fd });
 
     if (subRes.ok) {
-      updatePushStatusUI('✅', 'Notifications active! 🔔', 'active');
+      updatePushStatusUI('✅', "Notifications on! We'll ping you when your table is ready.", 'active');
     } else {
-      const contentType = subRes.headers.get('content-type') || '';
-      const errBody = await subRes.text();
-      console.warn('Push subscribe API failed:', subRes.status, errBody.slice(0, 200));
-      if (contentType.includes('text/html') || subRes.status === 404 && errBody.includes('<!')) {
-        updatePushStatusUI('⚠️', 'Server offline — tap Enable Notifications when ready', 'error');
+      const ct   = subRes.headers.get('content-type') || '';
+      const body = await subRes.text();
+      if (ct.includes('text/html') || (subRes.status === 404 && body.includes('<!'))) {
+        updatePushStatusUI('⚠️', 'Server offline — tap to retry', 'offline');
       } else {
-        updatePushStatusUI('❌', `Failed to save (${subRes.status}) — tap to retry`, 'error');
+        updatePushStatusUI('❌', `Save failed (${subRes.status}) — tap to retry`, 'error');
       }
     }
   } catch (e) {
-    console.error('Push subscribe error:', e.name, e.message);
+    console.error('Push error:', e.name, e.message);
     if (isIOS && !isStandalone) {
-      updatePushStatusUI('📲', 'Add to Home Screen for notifications', 'inactive');
+      updatePushStatusUI('📲', 'Add to Home Screen to get notified', 'inactive');
     } else {
-      updatePushStatusUI('❌', `Notification setup failed: ${e.name}: ${e.message}`, 'error');
+      updatePushStatusUI('❌', `${e.name}: ${e.message}`, 'error');
     }
   }
 }
 
-// Auto-attempt on page load. If permission is already granted we'll silently
-// re-store the subscription (handles reload / cross-device link cases).
-// If permission is "default", we still show the section with the Enable button
-// so the user has a clear way to opt in without re-joining the queue.
+// Auto-subscribe: silently re-uses existing subscription if permission already granted.
 window.addEventListener('load', () => {
-  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-  const isStandalone = window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches;
-  const hasPushApi = 'Notification' in window && 'serviceWorker' in navigator && 'PushManager' in window;
+  const isIOS        = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+  const isStandalone = window.navigator.standalone || window.matchMedia('(display-mode:standalone)').matches;
+  const hasPushApi   = 'Notification' in window && 'serviceWorker' in navigator && 'PushManager' in window;
 
   if (!hasPushApi) {
     updatePushStatusUI('🔊', 'Keep this page open — your browser will alert when ready.', 'inactive');
@@ -390,21 +504,19 @@ window.addEventListener('load', () => {
     return;
   }
   if (Notification.permission === 'granted') {
-    // Re-subscribe silently; this stores the sub on the server if it isn't already.
     subscribePush();
   } else if (Notification.permission === 'denied') {
     updatePushStatusUI('🔕', 'Notifications blocked — enable in browser Settings', 'error');
   } else {
-    updatePushStatusUI('🔔', 'Enable notifications so we can alert you when your table is ready', 'inactive');
+    updatePushStatusUI('🔔', 'Enable notifications to be alerted when your table is ready', 'inactive');
   }
 });
 
-// Log browser push capability for diagnostics
 console.log('Push diag:', {
   isIOS: /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream,
-  isStandalone: window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches,
+  isStandalone: window.navigator.standalone || window.matchMedia('(display-mode:standalone)').matches,
   hasPush: 'Notification' in window && 'serviceWorker' in navigator && 'PushManager' in window,
-  permission: 'Notification' in window ? Notification.permission : 'N/A'
+  permission: 'Notification' in window ? Notification.permission : 'N/A',
 });
 
 poll();
